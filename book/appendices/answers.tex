@@ -1,0 +1,193 @@
+\chapter{Answers to Exercises}
+ 
+\chapterlinks{Answers}
+ 
+\section{Section 2.3}
+\editsection{Answers}{1}
+ 
+\subsection{Exercise 1}
+\editsection{Answers}{2}
+ 
+\subsubsection{Part 1}
+\editsection{Answers}{3}
+ 
+\begin{lstlisting}
+parseNumber :: Parser LispVal
+parseNumber = do x <- many1 digit
+                (return . Number . read) x
+\end{lstlisting}
+ 
+\subsubsection{Part 2}
+\editsection{Answers}{4}
+ 
+In order to anwer this question, you need to do a bit of detective work! It is helpful to read up on do notation. Using the information there, we can mechanically transform the above answer into the following.
+ 
+\begin{lstlisting}
+parseNumber = many1 digit >>= \x -> (return . Number . read) x
+\end{lstlisting}
+ 
+This can be cleaned up into the following:
+ 
+\begin{lstlisting}
+parseNumber = many1 digit >>= return . Number . read
+\end{lstlisting}
+ 
+\subsection{Exercise 2}
+\editsection{Answers}{5}
+ 
+We need to create a new parser action that accepts a backslash followed by either another backslash or a doublequote. This action needs to return only the second character.
+ 
+\begin{lstlisting}
+escapedChars :: Parser String
+escapedChars = do char '\\' -- a backslash
+                  x <- oneOf "\\\"" -- either backslash or doublequote
+                  return [x] -- make this character into a string
+\end{lstlisting}
+ 
+Once that is done, we need to make some changes to parseString.
+ 
+\begin{lstlisting}
+parseString :: Parser LispVal
+parseString = do char '"'
+                 x <- many $ many1 (noneOf "\"\\") <|> escapedChars
+                 char '"'
+                 return $ String (concat x)
+\end{lstlisting}
+ 
+\subsection{Exercise 3}
+\editsection{Answers}{6}
+ 
+\begin{lstlisting}
+escapedChars :: Parser String
+escapedChars = do char '\\' 
+                  x <- oneOf "\\\"ntr" 
+                  case x of 
+                    '\\' -> do return [x]
+                    '"' -> do return [x]
+                    't' -> do return "\t"
+                    'n' -> do return "\n"
+                    'r' -> do return "\r"
+\end{lstlisting}
+ 
+\subsection{Exercise 4}
+\editsection{Answers}{7}
+ 
+First, it is necessary to change the definition of symbol.
+ 
+\begin{lstlisting}
+symbol :: Parser Char
+symbol = oneOf "!$%&|*+-/:<;\color{green}=;>?@^_~"
+\end{lstlisting}
+ 
+This means that it is no longer possible to begin an atom with the hash character. This necessitates a different way of parsing \verb|#t| and \verb|#f|.
+ 
+\begin{lstlisting}
+parseBool :: Parser LispVal
+parseBool = do string "#"
+               x <- oneOf "tf"
+               return $ case x of 
+                          't' -> Bool True
+                          'f' -> Bool False
+\end{lstlisting}
+ 
+This in turn requires us to make changes to parseExpr.
+ 
+\begin{lstlisting}
+parseExpr :: Parser LispVal
+parseExpr = parseAtom
+        <|> parseString
+        <|> parseNumber
+        <|> parseBool
+\end{lstlisting}
+ 
+\verb|parseNumber| need to be changed to the following.
+ 
+\begin{lstlisting}
+parseNumber :: Parser LispVal
+parseNumber = do num <- parseDigital1 <|> parseDigital2 <|>
+        parseHex <|> parseOct <|> parseBin
+                 return $ num
+\end{lstlisting}
+ 
+And the following new functions need to be added.
+ 
+ 
+\begin{lstlisting}
+parseDigital1 :: Parser LispVal
+parseDigital1 = do x <- many1 digit
+                   (return . Number . read) x   
+\end{lstlisting}
+ 
+\begin{lstlisting}
+parseDigital2 :: Parser LispVal
+parseDigital2 = do try $ string "#d"
+                   x <- many1 digit
+                   (return . Number . read) x
+\end{lstlisting}
+ 
+\begin{lstlisting}
+parseHex :: Parser LispVal
+parseHex = do try $ string "#x"
+              x <- many1 hexDigit
+               return $ Number (hex2dig x)
+\end{lstlisting}
+ 
+\begin{lstlisting}
+parseOct :: Parser LispVal
+parseOct = do try $ string "#o"
+              x <- many1 octDigit
+              return $ Number (oct2dig x)
+\end{lstlisting}
+ 
+\begin{lstlisting}
+parseBin :: Parser LispVal
+parseBin = do try $ string "#b"
+              x <- many1 (oneOf "10")
+              return $ Number (bin2dig x)
+\end{lstlisting}
+ 
+\begin{lstlisting}
+oct2dig x = fst $ readOct x !! 0
+hex2dig x = fst $ readHex x !! 0
+bin2dig  = bin2dig' 0
+bin2dig' digint "" = digint
+bin2dig' digint (x:xs) = let old = 2 * digint + (if x == '0' then 0 else 1) in bin2dig' old xs
+\end{lstlisting}
+ 
+\subsection{Exercise 5}
+\editsection{Answers}{8}
+ 
+\begin{lstlisting}
+data LispVal = Atom String
+             | List [LispVal]
+             | DottedList [LispVal] LispVal
+             | Number Integer
+             | String String
+             | Bool Bool
+             | Character Char
+\end{lstlisting}
+ 
+\begin{lstlisting}
+parseChar :: Parser LispVal
+parseChar = do try $ string "#\\"
+               x <- parseCharName <|> anyChar
+               return $ Character x 
+\end{lstlisting}
+ 
+\begin{lstlisting}
+parseCharName = do x <- try (string "space" <|> string "newline")
+                   case x of 
+                     "space" -> do return ' '
+                     "newline" -> do return '\n'
+\end{lstlisting}
+ 
+Note that this does not actually conform to the standard; as it stands, \verb|space| and \verb|newline| must be entirely lowercase; the standard states that they should be case insensitive.
+ 
+\begin{lstlisting}
+parseExpr :: Parser LispVal
+parseExpr = parseAtom
+        <|> parseString
+        <|> try parseNumber -- we need the 'try' because 
+        <|> try parseBool -- these can all start with the hash char
+        <|> try parseChar
+\end{lstlisting}

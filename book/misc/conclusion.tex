@@ -1,0 +1,27 @@
+\chapter*{Conclusion \& Further Resources}
+\addcontentsline{toc}{chapter}{Conclusion}
+ 
+\chapterlinks{Conclusion}
+ 
+You now have a working Scheme interpreter that implements a large chunk of the standard, including functions, lambdas, lexical scoping, symbols, strings, integers, list manipulation, and assignment. You can use it interactively, with a REPL, or in batch mode, running script files. You can write libraries of Scheme functions and either include them in programs or load them into the interactive interpreter. With a little text processing via awk or sed, you can format the output of UNIX\index{UNIX} commands as parenthesized Lisp lists, read them into a Scheme program, and use this interpreter for shell scripting.
+ 
+There're still a number of features you could add to this interpreter. Hygienic macros let you perform transformations on the source code before it's executed. They're a very convenient feature for adding new language features, and several standard parts of Scheme (such as let-bindings\index{let-binding} and additional control flow features) are defined in terms of them. \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html\#\%_sec_4.3}{Section 4.3} of R5RS\index{R5RS Scheme} defines the macro system's syntax and semantics, and there is a \href{http://library.readscheme.org/page3.html}{whole collection} of papers on implementation. Basically, you'd want to intersperse a function between readExpr and eval that takes a form and a macro environment, looks for transformer keywords, and then transforms them according to the rules of the pattern language, rewriting variables as necessarily.
+ 
+Continuations are a way of capturing "the rest of the computation", saving it, and perhaps executing it more than once. Using them, you can implement just about every control flow feature in every major programming language. The easiest way to implement continuations is to transform the program into \href{http://library.readscheme.org/page6.html}{continuation-passing style}\index{continuation-passing style}, so that \verb|eval|\index{eval@\texttt{eval}} takes an additional continuation argument and calls it, instead of returning a result. This parameter gets threaded through all recursive calls to eval, but only is only manipulated when evaluating a call to call-with-current-continuation.
+ 
+Dynamic-wind could be implemented by keeping a stack of functions to execute when leaving the current continuation and storing (inside the continuation data type) a stack of functions to execute when resuming the continuation.
+ 
+If you're just interested in learning more Haskell, there are a large number of libraries that may help:
+ 
+\begin{itemize}
+	\item For webapps: \href{http://www.informatik.uni-freiburg.de/~thiemann/haskell/WASH/}{WASH}\index{WASH}, a monadic web framework
+	\item For databases: \href{http://haskelldb.sourceforge.net/}{HaskellDB}\index{HaskellDB}, a library that wraps SQL\index{SQL} as a set of Haskell functions, giving you all the type-safety of the language when querying the database
+	\item For GUI programming: \href{http://www.md.chalmers.se/Cs/Research/Functional/Fudgets/}{Fudgets}\index{Fudgets} and \href{http://wxhaskell.sourceforge.net/}{wxHaskell}\index{wxHaskell}. wxHaskell is more of a conventional MVC GUI library, while Fudgets includes a lot of new research about how to represent GUIs in functional programming languages
+	\item For concurrency: \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/stm/Control.Concurrent.STM.html}{Software Transactional Memory}\index{Software Transactional Memory}, described in the paper \href{http://research.microsoft.com/~simonpj/papers/stm/stm.pdf}{\textit{Composable Memory Transactions}\index{Composable Memory Transactions@\textit{Composable Memory Transactions}}}
+	\item For networking: GHC's\index{GHC} \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/network/Network.html}{Networking libraries}
+\end{itemize}
+ 
+This should give you a starting point for further investigations into the language. Happy hacking!
+ 
+\markboth{CONCLUSION}{}
+\thispagestyle{myheadings}

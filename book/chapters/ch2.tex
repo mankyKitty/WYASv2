@@ -1,0 +1,281 @@
+\chapter{Parsing}
+ 
+\chapterlinks{Parsing}
+ 
+\section{Writing a Simple Parser}
+\editsection{Parsing}{1}
+ 
+Now, let's try writing a very simple parser. We'll be using the \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html}{Parsec}\index{Parsec@\texttt{Parsec}} library, which comes with \href{http://www.haskell.org/ghc}{GHC}\index{GHC} but may need to be downloaded separately if you're using another compiler.
+ 
+Start by adding this line to the import section:
+ 
+\codesnippet{simpleparser1}{3}{3}
+ 
+This makes the Parsec library functions available to us, except the spaces function, whose name conflicts with a function that we'll be defining later.
+ 
+Now, we'll define a parser that recognizes one of the symbols allowed in Scheme identifiers:
+ 
+\codesnippet{simpleparser1}{9}{10}
+ 
+This is another example of a monad\index{monad}: in this case, the ``extra information'' that is being hidden is all the info about position in the input stream, backtracking record, first and follow sets, etc. Parsec takes care of all of that for us. We need only use the Parsec library function \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#oneOf}{\texttt{oneOf}}\index{oneOf@\texttt{oneOf}}, and it'll recognize a single one of any of the characters in the string passed to it. Parsec provides a number of pre-built parsers: for example, \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#letter}{letter}\index{letter} and \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#digit}{digit}\index{digit} are library functions. And as you're about to see, you can compose primitive parsers into more sophisticated productions.
+ 
+Let's define a function to call our parser and handle any possible errors:
+ 
+\codesnippet{simpleparser1}{12}{15}
+ 
+As you can see from the type signature, \verb|readExpr|\index{readExpr@\texttt{readExpr}} is a function (\lstinline|->|\index{->@\texttt{->}}) from a String\index{String@\texttt{String}} to a String. We name the parameter input, and pass it, along with the symbol action we defined above and the name of the parser (``lisp''), to the Parsec function \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#parse}{\texttt{parse}}\index{parse@\texttt{parse}}.
+ 
+\verb|parse| can return either the parsed value or an error, so we need to handle the error case. Following typical Haskell convention, Parsec returns an \verb|Either|\index{Either@\texttt{Either}} data type, using the \verb|Left|\index{Left@\texttt{Left}} constructor to indicate an error and the \verb|Right|\index{Right@\texttt{Right}} one for a normal value.
+ 
+We use a case...of construction to match the result of parse against these
+alternatives. If we get a \verb|Left| value (error), then we bind the error itself to
+\verb|err| and return \lstinline|"No match"| with the string representation of the error. If we get
+a \verb|Right| value, we bind it to \verb|val|, ignore it, and return the string \lstinline|"Found value"|.
+ 
+The case...of construction is an example of pattern matching, which we will see in much greater detail later on.
+ 
+Finally, we need to change our main function to call \verb|readExpr|\index{readExpr@\texttt{readExpr}} and print out the result:
+ 
+\codesnippet{simpleparser1}{5}{7}
+ 
+The complete code is therefore:
+ 
+\completecode{simpleparser1}{A simpe parsing program}
+ 
+To compile and run this, you need to specify -package\index{-package@\texttt{-package}} parsec\index{Parsec@\texttt{Parsec}} on the command line, or else there will be link errors. For example:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o simple_parser simpleparser1.hs
+user>> ./simple_parser $
+ Found value
+user>> ./simple_parser a
+ No match: "lisp" (line 1, column 1):
+ unexpected "a"
+\end{lstlisting}
+ 
+\section{Whitespace}
+\editsection{Parsing}{2}
+ 
+Next, we'll add a series of improvements to our parser that'll let it recognize progressively more complicated expressions. The current parser chokes if there's whitespace preceding our symbol:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ./simple_parser "   %"
+ No match: "lisp" (line 1, column 1):
+ unexpected " "
+\end{lstlisting} 
+ 
+Let's fix that, so that we ignore whitespace.
+ 
+First, lets define a parser that recognizes any number of whitespace characters. Incidentally, this is why we included the \lstinline|hiding (spaces)| clause when we imported Parsec: there's already a function \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#spaces}{\texttt{spaces}}\index{spaces@\texttt{spaces}} in that library, but it doesn't quite do what we want it to. (For that matter, there's also a parser called \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#lexeme}{lexeme}\index{lexme@\texttt{lexme}} that does exactly what we want, but we'll ignore that for pedagogical purposes.)
+ 
+\codesnippet{simpleparser2}{16}{17}
+ 
+Just as functions can be passed to functions, so can actions. Here we pass the Parser\index{Parser@\texttt{Parser}} action \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#space}{space}\index{space@\texttt{space}} to the Parser action \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#skipMany1}{\texttt{skipMany1}}\index{skipMany1@\texttt{skipMany1}}, to get a Parser that will recognize one or more spaces.
+ 
+Now, let's edit our parse function so that it uses this new parser. Changes are highlighted:
+ 
+%\codesnippet{simpleparser2}{12}{14}
+\begin{lstlisting}
+readExpr input = case parse ;\highlightcode{(spaces >> symbol)}; "lisp" input of
+    Left err -> "No match: " ++ show err
+    Right val -> "Found value"
+\end{lstlisting}
+ 
+We touched briefly on the \verb|>>|\index{>>@\texttt{>>}} (``bind'') operator in lesson 2, where we mentioned that it was used behind the scenes to combine the lines of a do-block. Here, we use it explicitly to combine our whitespace and symbol parsers. However, bind has completely different semantics in the Parser and IO monads. In the Parser monad, bind means ``Attempt to match the first parser, then attempt to match the second with the remaining input, and fail if either fails.'' In general, bind will have wildly different effects in different monads; it's intended as a general way to structure computations, and so needs to be general enough to accommodate all the different types of computations. Read the documentation for the monad to figure out precisely what it does.
+ 
+\completecode{simpleparser2}{A simpe parsing program, now ignoring whitespace}
+ 
+Compile and run this code. Note that since we defined \verb|spaces|\index{spaces@\texttt{spaces}} in terms of \lstinline|skipMany1|\index{skipMany1@\texttt{skipMany1}}, it will no longer recognize a plain old single character. Instead you have to precede a symbol with some whitespace. We'll see how this is useful shortly:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o simple_parser simpleparser2.hs
+user>> ./simple_parser "   %" Found value
+user>> ./simple_parser %
+ No match: "lisp" (line 1, column 1):
+ unexpected "%"
+ expecting space
+user>> ./simple_parser "   abc"
+ No match: "lisp" (line 1, column 4):
+ unexpected "a"
+ expecting space
+\end{lstlisting}
+ 
+\section{Return Values}
+\editsection{Parsing}{3}
+ 
+Right now, the parser doesn't do much of anything---it just tells us whether a given string can be recognized or not. Generally, we want something more out of our parsers: we want them to convert the input into a data structure that we can traverse easily. In this section, we learn how to define a data type, and how to modify our parser so that it returns this data type.
+ 
+First, we need to define a data type that can hold any Lisp value:
+ 
+\codesnippet{datatypeparser}{21}{26}
+ 
+This is an example of an algebraic data type: it defines a set of possible values that a variable of type \verb|LispVal| can hold. Each alternative (called a constructor and separated by \lstinline!|!) contains a tag for the constructor along with the type of data that that constructor can hold. In this example, a \verb|LispVal|\index{LispVal@\texttt{LispVal}} can be:
+ 
+\begin{enumerate}
+ \item An \verb|Atom|\index{Atom@\texttt{Atom}}, which stores a String\index{String@\texttt{String}} naming the atom
+ \item A \verb|List|\index{List@\texttt{List}}, which stores a list of other \verb|LispVals| (Haskell lists are denoted by brackets); also called a proper list
+ \item A \verb|DottedList|\index{DottedList@\texttt{DottedList}}, representing the Scheme form \lstinline|(a b . c)|; also called an improper list. This stores a list of all elements but the last, and then stores the last element as another field
+ \item A \verb|Number|\index{Number@\texttt{Number}}, containing a Haskell Integer
+ \item A \verb|String|, containing a Haskell String
+ \item A \verb|Bool|\index{Bool@\texttt{Bool}}, containing a Haskell boolean value
+\end{enumerate}
+ 
+Constructors and types have different namespaces, so you can have both a constructor named \verb|String| and a type named \verb|String|. Both types and constructor tags always begin with capital letters.
+ 
+Next, let's add a few more parsing functions to create values of these types. A string is a double quote mark, followed by any number of non-quote characters, followed by a closing quote mark:
+ 
+\codesnippet{datatypeparser}{28}{32}
+ 
+We're back to using the do-notation instead of the \lstinline|>>|\index{>>@\texttt{>>}} operator. This is because we'll be retrieving the value of our parse (returned by \lstinline|many (noneOf "|\textcolor{string}{\texttt{\"}}\lstinline|"|\lstinline|)|)\index{many@\texttt{many}}\index{noneOf@\texttt{noneOf}} and manipulating it, interleaving some other parse operations in the meantime. In general, use \lstinline|>>| if the actions don't return a value, \lstinline|>>=|\index{>>=@\texttt{>>=}} if you'll be immediately passing that value into the next action, and do-notation otherwise.
+ 
+Once we've finished the parse and have the Haskell \verb|String|\index{String@\texttt{String}} returned from many, we apply the String constructor (from our \verb|LispVal|\index{LispVal@\texttt{LispVal}} data type) to turn it into a \verb|LispVal|. Every constructor in an algebraic data type also acts like a function that turns its arguments into a value of its type. It also serves as a pattern that can be used in the left-hand side of a pattern-matching expression.
+ 
+We then apply the built-in function return to lift our \verb|LispVal| into the Parser monad. Remember, each line of a do-block must have the same type, but the result of our String constructor is just a plain old \verb|LispVal|. Return lets us wrap that up in a Parser action that consumes no input but returns it as the inner value. Thus, the whole \verb|parseString|\index{parseString@\texttt{parseString}} action will have type \verb|Parser LispVal|\index{Parser@\texttt{Parser}}.
+ 
+The \verb|$| operator is infix function application: it's the same as if we'd written return \lstinline|(String x)|, but \verb|$| is right-associative, letting us eliminate some parentheses. Since \verb|$| is an operator, you can do anything with it that you'd normally do to a function: pass it around, partially apply it, etc. In this respect, it functions like the Lisp function \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.4}{apply}.
+ 
+Now let's move on to Scheme variables. An \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-5.html\#\%_sec_2.1}{\texttt{atom}} is a letter or symbol, followed by any number of letters, digits, or symbols:
+ 
+\codesnippet{datatypeparser}{34}{41}
+ 
+Here, we introduce another Parsec combinator, the choice operator \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#or}{\texttt{<|>}}. This tries the first parser, then if it fails, tries the second. If either succeeds, then it returns the value returned by that parser. The first parser must fail before it consumes any input: we'll see later how to implement backtracking.
+ 
+Once we've read the first character and the rest of the atom, we need to put them together. The \verb|let| statement defines a new variable atom. We use the list concatenation operator \lstinline|++| for this. Recall that first is just a single character, so we convert it into a singleton list by putting brackets around it. If we'd wanted to create a list containing many elements, we need only separate them by commas.
+ 
+Then we use a case statement to determine which \verb|LispVal| to create and return, matching against the literal strings for true and false. The otherwise alternative is a readability trick: it binds a variable named otherwise, whose value we ignore, and then always returns the value of atom
+ 
+Finally, we create one more parser, for numbers. This shows one more way of dealing with monadic values:
+ 
+\codesnippet{datatypeparser}{43}{44}
+ 
+It's easiest to read this backwards, since both function application (\verb|$|) and function composition (\verb|.|) associate to the right. The parsec combinator \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#many1}{many1} matches one or more of its argument, so here we're matching one or more digits. We'd like to construct a number \verb|LispVal| from the resulting string, but we have a few type mismatches. First, we use the built-in function read to convert that string into a number. Then we pass the result to \verb|Number| to get a \verb|LispVal|. The function composition operator \verb|.| creates a function that applies its right argument and then passes the result to the left argument, so we use that to combine the two function applications.
+ 
+Unfortunately, the result of \lstinline|many1 digit| is actually a Parser \verb|String|, so our combined \lstinline|Number . read| still can't operate on it. We need a way to tell it to just operate on the value inside the monad, giving us back a Parser \verb|LispVal|. The standard function \verb|liftM| does exactly that, so we apply \verb|liftM| to our \lstinline|Number . read| function, and then apply the result of that to our parser.
+ 
+We also have to import the Monad module up at the top of our program to get access to \verb|liftM|:
+ 
+\codesnippet{datatypeparser}{2}{2}
+ 
+This style of programming---relying heavily on function composition, function application, and passing functions to functions---is very common in Haskell code. It often lets you express very complicated algorithms in a single line, breaking down intermediate steps into other functions that can be combined in various ways. Unfortunately, it means that you often have to read Haskell code from right-to-left and keep careful track of the types. We'll be seeing many more examples throughout the rest of the tutorial, so hopefully you'll get pretty comfortable with it.
+ 
+Let's create a parser that accepts either a string, a number, or an atom:
+ 
+\codesnippet{datatypeparser}{45}{48}
+ 
+And edit readExpr so it calls our new parser:
+ 
+%\lstinputlisting[firstline=13,lastline=16]{code/simpleparser2.hs}
+\begin{lstlisting}
+readExpr :: String -> String
+readExpr input = case parse ;\highlightcode{parseExpr}; "lisp" input of
+    Left err -> "No match: " ++ show err
+    Right _ -> "Found value"
+\end{lstlisting}
+ 
+The complete code is therefore:
+ 
+\completecode{datatypeparser}{A parser able to handle data types}
+ 
+Compile and run this code, and you'll notice that it accepts any number, string, or symbol, but not other strings:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o simple_parser datatypeparser.hs
+user>> ./simple_parser "\"this is a string\""
+ Found value
+user>> ./simple_parser 25
+ Found value
+user>> ./simple_parser symbol
+ Found value
+user>> ./simple_parser (symbol)
+ bash: syntax error near unexpected token `symbol'
+user>> ./simple_parser "(symbol)"
+ No match: "lisp" (line 1, column 1):
+ unexpected "("
+ expecting letter, "\"" or digit
+\end{lstlisting}
+ 
+\subsection{Exercises}
+ 
+\begin{enumerate}
+	\item Rewrite \verb|parseNumber| using
+	\begin{enumerate}
+		\item do-notation.
+		\item explicit sequencing with the \href{http://www.haskell.org/onlinereport/standard-prelude.html\#tMonad}{\texttt{>>=}} operator.
+	\end{enumerate}
+	\item Our strings aren't quite \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.3.5}{R5RS compliant}, because they don't support escaping of internal quotes within the string. Change \verb|parseString| so that \verb|\"| gives a literal quote character instead of terminating the string. You may want to replace \lstinline|noneOf "|\color{string}\verb|\"|\lstinline|"|\color{black} with a new parser action that accepts either a non-quote character or a backslash followed by a quote mark.
+	\item Modify the previous exercise to support \verb|\n|, \verb|\r|, \verb|\t|, \verb|\\|, and any other desired escape characters.
+	\item Change \verb|parseNumber| to support the \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.2.4}{Scheme standard for different bases}. You may find the \href{http://www.haskell.org/onlinereport/numeric.html\#sect14}{\texttt{readOct} and \texttt{readHex}} functions useful.
+	\item Add a Character constructor to \verb|LispVal|, and create a parser for \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.3.4}{character literals} as described in R5RS.
+	\item Add a \verb|Float| constructor to \verb|LispVal|, and support R5RS syntax for \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.2.4}{decimals}. The Haskell function \href{http://www.haskell.org/onlinereport/numeric.html\#sect14}{\texttt{readFloat}} may be useful.
+	\item Add data types and parsers to support the \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.2.1}{full numeric tower} of Scheme numeric types. Haskell has built-in types to represent many of these; check the Prelude. For the others, you can define compound types that represent eg. a Rational as a numerator and denominator, or a Complex as a real and imaginary part (each itself a Real number).
+\end{enumerate}
+ 
+\section{Recursive Parsers: Adding lists, dotted lists, and quoted datums}
+\editsection{Parsing}{4}
+ 
+Next, we add a few more parser actions to our interpreter. Start with the parenthesized lists that make Lisp famous:
+ 
+\codesnippet{recursiveparser}{46}{47}
+ 
+This works analogously to parseNumber, first parsing a series of expressions separated by whitespace (\lstinline|sepBy parseExpr spaces|) and then apply the \verb|List| constructor to it within the Parser monad. Note too that we can pass \verb|parseExpr| to \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#sepBy}{\texttt{sepBy}}, even though it's an action we wrote ourselves.
+ 
+The dotted-list parser is somewhat more complex, but still uses only concepts that we're already familiar with:
+ 
+\codesnippet{recursiveparser}{49}{53}
+ 
+Note how we can sequence together a series of Parser actions with \lstinline|>>| and then use the whole sequence on the right hand side of a do-statement. The expression \lstinline|char '.' >> spaces| returns a \verb|Parser ()|, then combining that with \verb|parseExpr| gives a Parser \verb|LispVal|, exactly the type we need for the do-block.
+ 
+Next, let's add support for the single-quote syntactic sugar of Scheme:
+ 
+\codesnippet{recursiveparser}{55}{59}
+ 
+Most of this is fairly familiar stuff: it reads a single quote character, reads an expression and binds it to x, and then returns \lstinline[language=lisp]|(quote x)|, to use Scheme notation. The \verb|Atom| constructor works like an ordinary function: you pass it the String you're encapsulating, and it gives you back a \verb|LispVal|. You can do anything with this \verb|LispVal| that you normally could, like put it in a list.
+ 
+Finally, edit our definition of \verb|parseExpr| to include our new parsers:
+ 
+%\codesnippet{recursiveparser}{62}{69}
+\begin{lstlisting}
+parseExpr :: Parser LispVal
+parseExpr = parseAtom
+        <|> parseString
+        <|> parseNumber
+        ;\highlightcode{<|> parseQuoted};
+       ;\highlightcode{ <|> do char '('};
+               ;\highlightcode{x <- (try parseList) <|> parseDottedList};
+               ;\highlightcode{char ')'};
+              ;\highlightcode{ return x};
+\end{lstlisting}
+ 
+This illustrates one last feature of Parsec: backtracking. \verb|parseList| and \verb|parseDottedList| recognize identical strings up to the dot; this breaks the requirement that a choice alternative may not consume any input before failing. The \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#try}{\texttt{try}} combinator attempts to run the specified parser, but if it fails, it backs up to the previous state. This lets you use it in a choice alternative without interfering with the other alternative.
+ 
+The complete code is therefore:
+ 
+\completecode{recursiveparser}{A simpe parser, now with Lisp list, dotted list and quoted datum parsing}
+ 
+Compile and run this code:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o simple_parser recursiveparser.hs
+user>> ./simple_parser "(a test)"
+ Found value
+user>> ./simple_parser "(a (nested) test)"
+ Found value
+user>> ./simple_parser "(a (dotted . list) test)"
+ Found value
+user>> ./simple_parser "(a '(quoted (dotted . list)) test)"
+ Found value
+user>> ./simple_parser "(a '(imbalanced parens)"
+ No match: "lisp" (line 1, column 24):
+ unexpected end of input
+ expecting space or ")"
+\end{lstlisting}
+ 
+Note that by referring to \verb|parseExpr| within our parsers, we can nest them arbitrarily deep. Thus, we get a full Lisp reader with only a few definitions. That's the power of recursion.
+ 
+\subsection{Exercises}
+ 
+\begin{enumerate}
+	\item Add support for the \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html\#\%_sec_4.2.6}{backquote} syntactic sugar: the Scheme standard details what it should expand into (quasiquote/unquote).
+	\item Add support for \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.3.6}{vectors}. The Haskell representation is up to you: GHC does have an \href{http://www.haskell.org/ghc/docs/latest/html/libraries/base/Data-Array.html}{\texttt{Array}} data type, but it can be difficult to use. Strictly speaking, a vector should have constant-time indexing and updating, but destructive update in a purely functional language is difficult. You may have a better idea how to do this after the section on \verb|set!|, later in this tutorial.
+	\item Instead of using the try combinator, left-factor the grammar so that the common subsequence is its own parser. You should end up with a parser that matches a string of expressions, and one that matches either nothing or a dot and a single expressions. Combining the return values of these into either a \verb|List| or a \verb|DottedList| is left as a (somewhat tricky) exercise for the reader: you may want to break it out into another helper function.
+\end{enumerate}

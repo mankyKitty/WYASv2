@@ -1,0 +1,99 @@
+\chapter[Defining Scheme Functions]{Defining Scheme Functions: Closures and Environments}
+ 
+\chapterlinks{Defining_Scheme_Functions}
+ 
+Now that we can define variables, we might as well extend it to functions. After this section, you'll be able to define your own functions within Scheme and use them from other functions. Our implementation is nearly finished.
+ 
+Let's start by defining new \verb|LispVal|\index{LispVal@\texttt{LispVal}} constructors:
+ 
+\codesnippet{functionparser}{33}{35}
+ 
+We've added a separate constructor for primitives, because we'd like to be able to store \lstinline|+|\index{+@\texttt{+}}, \verb|eqv?|\index{eqv?@\texttt{eqv?}}, etc. in variables and pass them to functions. The \verb|PrimitiveFunc|\index{PrimitiveFunc@\texttt{PrimitiveFunc}} constructor stores a function that takes a list of arguments to a \verb|ThrowsError LispVal|\index{ThrowsError@\texttt{ThrowsError}}, the same type that is stored in our primitive list.
+ 
+We also want a constructor to store user-defined functions. We store 4 pieces of information:
+ 
+\begin{enumerate}
+	\item the names of the parameters, as they're bound in the function body
+	\item whether the function accepts a variable-length list of arguments, and if so, the variable name it's bound to
+	\item the function body, as a list of expressions
+	\item the environment that the function was created in
+\end{enumerate}
+ 
+This is an example of a \href{http://www.haskell.org/hawiki/UsingRecords}{record\index{record}} type. Records are somewhat clumsy in Haskell, so we're only using them for demonstration purposes. However, they can be invaluable in large-scale programming.
+ 
+Next, we'll want to edit our show function to include the new types:
+ 
+\codesnippet{functionparser}{88}{93}
+ 
+Instead of showing the full function, we just print out the word \lstinline|"<primitive>"| for primitives and the header info for user-defined functions. This is an example of pattern-matching for records: as with normal algebraic types, a pattern looks exactly like a constructor call. Field names come first and the variables they'll be bound to come afterwards.
+ 
+Next, we need to change apply. Instead of being passed the name of a function, it'll be passed a \verb|LispVal|\index{LispVal@\texttt{LispVal}} representing the actual function. For primitives, that makes the code simpler: we need only read the function out of the value and apply it.
+ 
+\codesnippet{functionparser}{131}{132}
+ 
+The interesting code happens when we're faced with a user defined function. Records let you pattern match on both the field name (as shown above) or the field position, so we'll use the latter form:
+ 
+\codesnippet{functionparser}{133}{142}
+ 
+The very first thing this function does is check the length of the parameter list against the expected number of arguments. It throws an error if they don't match. We define a local function num to enhance readability and make the program a bit shorter.
+ 
+Assuming the call is valid, we do the bulk of the call in monadic pipeline that binds the arguments to a new environment and executes the statements in the body. The first thing we do is zip the list of parameter names and the list of (already-evaluated) argument values together into a list of pairs. Then, we take that and the function's closure (not the current environment---this is what gives us lexical scoping) and use them to create a new environment to evaluate the function in. The result is of type \verb|IO|\index{IO@\texttt{IO}}, while the function as a whole is \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}}, so we need to \verb|liftIO|\index{liftIO@\texttt{liftIO}} it into the combined monad.
+ 
+Now it's time to bind the remaining arguments to the \verb|varArgs|\index{varArgs@\texttt{varArgs}} variable, using the local function bindVarArgs. If the function doesn't take \verb|varArgs| (the Nothing clause), then we just return the existing environment. Otherwise, we create a singleton list that has the variable name as the key and the remaining args as the value, and pass that to bindVars. We define the local variable remainingArgs for readability, using the built-in function drop to ignore all the arguments that have already been bound to variables.
+ 
+The final stage is to evaluate the body in this new environment. We use the local function \verb|evalBody|\index{evalBody@\texttt{evalBody}} for this, which maps the monadic function eval env over every statement in the body, and then returns the value of the last statement.
+ 
+Since we're now storing primitives as regular values in variables, we have to bind them when the program starts up:
+ 
+\codesnippet{functionparser}{320}{322}
+ 
+\sloppy
+This takes the initial null environment, makes a bunch of name/value pairs consisting of \verb|PrimitiveFunc|\index{PrimitiveFunc@\texttt{PrimitiveFunc}} wrappers, and then binds the new pairs into the new environment. We also want to change \verb|runOne|\index{runOne@\texttt{runOne}} and \verb|runRepl|\index{runRepl@\texttt{runRepl}} to \verb|primitive| \verb|Bindings|\index{primitiveBindings@\texttt{primitiveBindings}} instead:
+\fussy
+ 
+\codesnippet{functionparser}{309}{313}
+ 
+Finally, we need to change the evaluator to support \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html\#\%_sec_4.1.4}{lambda} and function \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-8.html\#\%_sec_5.2}{define}. We'll start by creating a few helper functions to make it a little easier to create function objects in the \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}} monad:
+ 
+\codesnippet{functionparser}{367}{369}
+ 
+Here, \verb|makeNormalFunc|\index{makeNormalFunc@\texttt{makeNormalFunc}} and \verb|makeVarArgs|\index{makeVarArgs@\texttt{makeVarArgs}} should just be considered specializations of \verb|makeFunc|\index{makeFunc@\texttt{makeFunc}} with the first argument set appropriately for normal functions vs. variable args. This is a good example of how to use first-class functions to simplify code.
+ 
+Now, we can use them to add our extra \verb|eval|\index{eval@\texttt{eval}} clauses. They should be inserted after the define-variable clause and before the function-application one:
+ 
+\codesnippet{functionparser}{115}{128}
+ 
+As you can see, they just use pattern matching to destructure the form and then call the appropriate function helper. In \verb|define|\index{define@\texttt{define}}'s case, we also feed the output into \verb|defineVar|\index{defineVar@\texttt{defineVar}} to bind a variable in the local environment. We also need to change the function application clause to remove the \verb|liftThrows|\index{liftThrows@\texttt{liftThrows}} function, since apply now works in the \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}} monad.
+ 
+The complete code is therefore:
+ 
+\completecode{functionparser}{A parser able to handle functions}
+ 
+We can now compile and run our program, and use it to write real programs!
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -fglasgow-exts -o lisp functionparser.hs
+user>> ./lisp
+Lisp>>> (define (f x y) (+ x y))
+ (lambda ("x" "y") ...)
+Lisp>>> (f 1 2)
+ 3
+Lisp>>> (f 1 2 3)
+ Expected 2 args: found values 1 2 3
+Lisp>>> (f 1)
+ Expected 2 args: found values 1
+Lisp>>> (define (factorial x) (if (= x 1) 1 (* x (factorial (- x 1)))))
+ (lambda ("x") ...)
+Lisp>>> (factorial 10)
+ 3628800
+Lisp>>> (define (counter inc) (lambda (x) (set! inc (+ x inc)) inc))
+ (lambda ("inc") ...)
+Lisp>>> (define my-count (counter 5))
+ (lambda ("x") ...)
+Lisp>>> (my-count 3)
+ 8
+Lisp>>> (my-count 6)
+ 14
+Lisp>>> (my-count 5)
+ 19
+\end{lstlisting}

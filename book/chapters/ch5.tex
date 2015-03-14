@@ -1,0 +1,225 @@
+\chapter{Evaluation, Part 2}
+ 
+\chapterlinks{Evaluation\%2C_Part_2}
+ 
+\section{Additional Primitives: Partial Application}
+\editsection{Evaluation\%2C_Part_2}{1}
+ 
+Now that we can deal with type errors, bad arguments, and so on, we'll flesh out our primitive list so that it does something more than calculate. We'll add boolean operators, conditionals, and some basic string operations.
+ 
+Start by adding the following into the list of primitives:
+ 
+\codesnippet{operatorparser}{109}{120}
+ 
+These depend on helper functions that we haven't written yet: \verb|numBoolBinop|\index{numBoolBinop@\texttt{numBoolBinop}} and \verb|strBoolBinop|. Instead of taking a variable number of arguments and returning an integer, these both take exactly 2 arguments and return a boolean. They differ from each other only in the type of argument they expect, so let's factor the duplication into a generic \verb|boolBinop|\index{boolBinop@\texttt{boolBinop}} function that's parameteried by the \verb|unpacker|\index{unpacker@\texttt{unpacker}} function it applies to its arguments:
+ 
+\codesnippet{operatorparser}{126}{131}
+ 
+Because each arg may throw a type mismatch, we have to unpack them sequentially, in a do-block (for the \verb|Error|\index{Error@\texttt{Error}} monad). We then apply the operation to the two arguments and wrap the result in the \verb|Bool|\index{Bool@\texttt{Bool}} constructor. Any function can be turned into an infix operator by wrapping it in backticks (\lstinline|`op`|).
+ 
+Also, take a look at the type signature. \verb|boolBinop|\index{boolBinop@\texttt{boolBinop}} takes two functions as its first two arguments: the first is used to unpack the arguments from \verb|LispVals|\index{LispVal@\texttt{LispVal}} to native Haskell types, and the second is the actual operation to perform. By parameterizing different parts of the behavior, you make the function more reusable.
+ 
+Now we define three functions that specialize \verb|boolBinop|\index{boolBinop@\texttt{boolBinop}} with different unpackers:
+ 
+\codesnippet{operatorparser}{133}{135}
+ 
+We haven't told Haskell how to unpack strings from \verb|LispVals|\index{LispVals@\texttt{LispVals}} yet. This works similarly to \verb|unpackNum|\index{unpackNum@\texttt{unpackNum}}, pattern matching against the value and either returning it or throwing an error. Again, if passed a primitive value that could be interpreted as a string (such as a number or boolean), it will silently convert it to the string representation.
+ 
+\codesnippet{operatorparser}{146}{150}
+ 
+And we use similar code to unpack booleans:
+ 
+\codesnippet{operatorparser}{152}{154}
+ 
+The complete code is therefore:
+ 
+\completecode{operatorparser}{A simple parser, now with several primitive operators}
+ 
+Let's compile and test this to make sure it's working, before we proceed to the next feature:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o simple_parser operatorparser.hs
+user>> ./simple_parser "(< 2 3)"
+ #t
+user>> ./simple_parser "(> 2 3)"
+ #f
+user>> ./simple_parser "(>= 3 3)"
+ #t
+user>> ./simple_parser "(string=? \"test\" \"test\")"
+ #t
+user>> ./simple_parser "(string<? \"abc\" \"bba\")"
+ #t
+\end{lstlisting}
+ 
+\section{Conditionals: Pattern Matching 2}
+\editsection{Evaluation\%2C_Part_2}{2}
+ 
+Now, we'll proceed to adding an if-clause to our evaluator. As with standard Scheme, our evaluator considers \verb|#f| to be false and any other value to be true:
+ 
+\codesnippet{conditionalparser}{93}{97}
+ 
+This is another example of nested pattern-matching. Here, we're looking for a 4-element list. The first element must be the atom \verb|if|. The others can be any Scheme forms. We take the first element, evaluate, and if it's false, evaluate the alternative. Otherwise, we evaluate the consequent.
+ 
+%\completecode{conditionalparser}{}
+ 
+Compile and run this, and you'll be able to play around with conditionals:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o simple_parser conditionalparser.hs
+user>> ./simple_parser "(if (> 2 3) \"no\" \"yes\")"
+ "yes"
+user>> ./simple_parser "(if (= 3 3) (+ 2 3 (- 5 1)) \"unequal\")"
+ 9
+\end{lstlisting}
+ 
+\section{List Primitives: \texttt{car}\index{car@\texttt{car}}, \texttt{cdr}\index{cdr@\texttt{cdr}}, and \texttt{cons}\index{cons@\texttt{cons}}}
+\editsection{Evaluation\%2C_Part_2}{3}
+ 
+For good measure, lets also add in the basic list-handling primitives. Because we've chosen to represent our lists as Haskell algebraic data types instead of pairs, these are somewhat more complicated than their definitions in many Lisps. It's easiest to think of them in terms of their effect on printed S-expressions:
+ 
+\begin{enumerate}
+	\item (car (a b c)) = a
+	\item (car (a)) = a
+	\item (car (a b . c)) = a
+	\item (car a) = error (not a list)
+	\item (car a b) = error (car takes only one argument)
+\end{enumerate}
+ 
+We can translate these fairly straightforwardly into pattern clauses, recalling that (\lstinline|x : xs|) divides a list into the first element and the rest:
+ 
+\codesnippet{listparser}{167}{171}
+ 
+Let's do the same with \verb|cdr|:
+ 
+\begin{enumerate}
+	\item (cdr (a b c)) = (b c)
+	\item (cdr (a b)) = (b)
+	\item (cdr (a)) = NIL
+	\item (cdr (a b . c)) = (b . c)
+	\item (cdr (a . b)) = b
+	\item (cdr a) = error (not list)
+	\item (cdr a b) = error (too many args)
+\end{enumerate}
+ 
+We can represent the first 3 cases with a single clause. Our parser represents \lstinline|'()| as \verb|List []|, and when you pattern-match (\lstinline|x : xs|) against \verb|[x]|, \verb|xs| is bound to \lstinline|[]|. The other ones translate to separate clauses:
+ 
+\codesnippet{listparser}{173}{178}
+ 
+Cons is a little tricky, enough that we should go through each clause case-by-case. If you cons together anything with \verb|Nil|\index{Nil@\texttt{Nil}}, you end up with a one-item list, the \verb|Nil| serving as a terminator:
+ 
+\codesnippet{listparser}{180}{181}
+ 
+If you cons together anything and a list, it's like tacking that anything onto the front of the list:
+ 
+\codesnippet{listparser}{182}{182}
+ 
+However, if the list is a \verb|DottedList|\index{DottedList@\texttt{DottedList}}, then it should stay a \verb|DottedList|, taking into account the improper tail:
+ 
+\codesnippet{listparser}{183}{183}
+ 
+If you cons together two non-lists, or put a list in front, you get a \verb|DottedList|. This is because such a cons cell isn't terminated by the normal \verb|Nil|\index{Nil@\texttt{Nil}} that most lists are.
+ 
+\codesnippet{listparser}{184}{184}
+ 
+Finally, attempting to cons together more or less than 2 arguments is an error:
+ 
+\codesnippet{listparser}{185}{185}
+ 
+Our last step is to implement \verb|eqv?|\index{eqv?@\texttt{eqv?}}. Scheme offers 3 levels of equivalence predicates: \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.1}{\texttt{eq?}\index{eq?@\texttt{eq?}}, \texttt{eqv?}, and \texttt{equal?}\index{equal?@\texttt{equal?}}}. For our purposes, \verb|eq?| and \verb|eqv?| are basically the same: they recognize two items as the same if they print the same, and are fairly slow. So we can write one function for both of them and register it under \verb|eq?| and \verb|eqv?|.
+ 
+\codesnippet{listparser}{187}{199}
+ 
+Most of these clauses are self-explanatory, the exception being the one for two \verb|Lists|\index{List@\texttt{List}}. This, after checking to make sure the lists are the same length, zips the two lists of pairs, runs \verb|eqvPair|\index{eqvPair@\texttt{eqvPair}} on them to test if each corresponding pair is equal, and then uses the function and to return false if any of the resulting values is false. \verb|eqvPair| is an example of a local definition: it is defined using the \verb|where|\index{where@\texttt{where}} keyword, just like a normal function, but is available only within that particular clause of \verb|eqv|\index{eqv@\texttt{eqv}}.
+ 
+The complete code is therefore:
+ 
+\completecode{listparser}{A parser able to handle lists}
+ 
+Compile and run to try out the new list functions:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o eqv listparser.hs
+user>> ./eqv "(car '(2 3 4))"
+ 2
+user>> ./eqv "(cdr '(2 3 4))"
+ (3 4)
+user>> ./eqv "(car (cdr (cons 2 '(3 4))))"
+ 3
+\end{lstlisting}
+ 
+\section{\texttt{Equal?} and Weak Typing: Heterogenous Lists}
+\editsection{Evaluation\%2C_Part_2}{4}
+ 
+Since we introduced weak typing above, we'd also like to introduce an \verb|equal?|\index{equal?@\texttt{equal?}} function that ignores differences in the type tags and only tests if two values can be interpreted the same. For example, \lstinline|(eqv? 2 "2") = #f|, yet we'd like \lstinline|(equal? 2 "2") = #t|. Basically, we want to try all of our unpack functions, and if any of them result in Haskell values that are equal, return true.
+ 
+The obvious way to approach this is to store the unpacking functions in a list and use \verb|mapM|\index{mapM@\texttt{mapM}} to execute them in turn. Unfortunately, this doesn't work, because standard Haskell only lets you put objects in a list if they're the same type. The various unpacker functions return different types, so you can't store them in the same list.
+ 
+We'll get around this by using a GHC extension---Existential Types---that lets us create a heterogenous list, subject to typeclass constraints. Extensions are fairly common in the Haskell world: they're basically necessary to create any reasonably large program, and they're often compatible between implementations (existential types work in both Hugs and GHC and are a candidate for standardization).
+ 
+The first thing we need to do is define a data type that can hold any function from a \verb|LispVal|\index{LispVal@\texttt{LispVal}} \lstinline|->| \verb|something|, provided that that ``something'' supports equality:
+ 
+\codesnippet{equalparser}{201}{201}
+ 
+This is like any normal algebraic datatype, except for the type constraint. It says, ``For any type that is an instance of \verb|Eq|\index{Eq@\texttt{Eq}}, you can define an \verb|Unpacker|\index{Unpacker@\texttt{Unpacker}} that takes a function from \verb|LispVal|\index{LispVal@\texttt{LispVal}} to that type, and may throw an error.'' We'll have to wrap our functions with the \verb|AnyUnpacker| constructor, but then we can create a list of \verb|Unpackers| that does just what we want it.
+ 
+Rather than jump straight to the \verb|equal?|\index{equal?@\texttt{equal?}} function, let's first define a helper function that takes an \verb|Unpacker| and then determines if two \verb|LispVals| are equal when it unpacks them:
+ 
+\codesnippet{equalparser}{203}{208}
+ 
+After pattern-matching to retrieve the actual function, we enter a do-block for the \verb|ThrowsError|\index{ThrowsError@\texttt{ThrowsError}} monad. This retrieves the Haskell values of the two \verb|LispVals|, and then tests whether they're equal. If there is an error anywhere within the two unpackers, it returns false, using the const function because \href{http://www.haskell.org/ghc/docs/latest/html/libraries/mtl/Control-Monad-Error.html}{\texttt{catchError}\index{catchError@\texttt{catchError}}} expects a function to apply to the error value.
+ 
+Finally, we can define \verb|equal?|\index{equal?@\texttt{equal?}} in terms of these helpers:
+ 
+\codesnippet{equalparser}{210}{216}
+ 
+\sloppy
+The first action makes a heterogenous list of \lstinline|[unpackNum,| \lstinline|unpackStr,| \lstinline|unpackBool]|, and then maps the partially-applied \lstinline|(unpackEquals arg1 arg2)| over it. This gives a list of \verb|Bools|\index{Bool@\texttt{Bool}}, so we use the Prelude function or to return true if any single one of them is true.
+\fussy
+ 
+The second action tests the two arguments with \verb|eqv?|\index{eqv?@\texttt{eqv?}}. Since we want \verb|equal?|\index{equal?@\texttt{equal?}} to be looser than \verb|eqv?|, it should return true whenever \verb|eqv?| does so. This also lets us avoid handling cases like the list or dotted-list (though this introduces a bug; see exercise \#2 in this section).
+ 
+Finally, \verb|equal?| ors both of these values together and wraps the result in the \verb|Bool|\index{Bool@\texttt{Bool}} constructor, returning a \verb|LispVal|. The \lstinline|let (Bool x) = eqvEquals in x| is a quick way of extracting a value from an algebraic type: it pattern matches \verb|Bool x| against the \verb|eqvEquals|\index{eqvEquals@\texttt{eqvEquals}} value, and then returns x. The result of a let-expression is the expression following the keyword \verb|in|\index{in@\texttt{in}}.
+ 
+To use these functions, insert them into our primitives list:
+ 
+\codesnippet{equalparser}{126}{131}
+\begin{lstlisting}[language=lisp]
+              ("car", car),
+              ("cdr", cdr),
+              ("cons", cons),
+              ("eq?", eqv),
+              ("eqv?", eqv),
+              ("equal?", equal)
+\end{lstlisting}
+ 
+\completecode{equalparser}{A parser able to compare values of different types}
+ 
+To compile this code, you need to enable GHC extensions with \verb|-fglasgow-exts|\index{-fglasgow-exts@\texttt{-fglasgow-exts}}:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -fglasgow-exts -o parser equalparser.hs
+user>> ./simple_parser "(cdr '(a simple test))"
+ (simple test)
+user>> ./simple_parser "(car (cdr '(a simple test)))"
+ simple
+user>> ./simple_parser "(car '((this is) a test))"
+ (this is)
+user>> ./simple_parser "(cons '(this is) 'test)"
+ ((this is) . test)
+user>> ./simple_parser "(cons '(this is) '())"
+ ((this is))
+user>> ./simple_parser "(eqv? 1 3)" #f
+user>> ./simple_parser "(eqv? 3 3)"
+ #t
+user>> ./simple_parser "(eqv? 'atom 'atom)"
+ #t
+\end{lstlisting}
+ 
+\section{Exercises}
+ 
+\begin{enumerate}
+	\item Instead of treating any non-false value as true, change the definition of \verb|if|\index{if@\texttt{if}} so that the predicate accepts only \verb|Bool|\index{Bool@\texttt{Bool}} values and throws an error on any others.
+	\item \verb|equal?|\index{equal?@\texttt{equal?}} has a bug in that a list of values is compared using eqv? instead of \verb|equal?|. For example, \verb|(equal? '(1 "2") '(1 2)) = #f|, while you'd expect it to be true. Change \verb|equal?| so that it continues to ignore types as it recurses into list structures. You can either do this explicitly, following the example in eqv?, or factor the list clause into a separate helper function that is parameterized by the equality testing function.
+	\item Implement \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html\#\%_idx_106}{\texttt{cond}\index{cond@\texttt{cond}}} and \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html\#\%_idx_114}{\texttt{case}\index{case@\texttt{case}}} expressions.
+	\item Add the rest of the \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.3.5}{string functions}. You don't yet know enough to do \verb|string-set!|; this is difficult to implement in Haskell, but you'll have enough information after the next two sections.
+\end{enumerate}

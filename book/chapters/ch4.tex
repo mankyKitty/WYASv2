@@ -1,0 +1,114 @@
+\chapter{Error Checking and Exceptions}
+ 
+\chapterlinks{Error_Checking_and_Exceptions}
+ 
+Currently, there are a variety of places within the code where we either ignore errors or silently assign ``default'' values like \lstinline|\#f|\index{\#f@\texttt{\#f}} or \lstinline|0| that make no sense. Some languages - like Perl and PHP - get along fine with this approach. However, it often means that errors pass silently throughout the program until they become big problems, which means rather inconvenient debugging sessions for the programmer. We'd like to signal errors as soon as they happen and immediately break out of execution.
+ 
+First, we need to \lstinline|import Control.Monad.Error|\index{Error@\texttt{Error}} to get access to Haskell's built-in error functions:
+ 
+\codesnippet{errorcheck}{4}{4}
+ 
+Then, we should define a data type to represent an error:
+ 
+\codesnippet{errorcheck}{123}{129}
+ 
+This is a few more constructors than we need at the moment, but we might as well forsee all the other things that can go wrong in the interpreter later. Next, we define how to print out the various types of errors and make \verb|LispError|\index{LispError@\texttt{LispError}} an instance of \verb|Show|\index{Show@\texttt{Show}}:
+ 
+\codesnippet{errorcheck}{131}{141}
+ 
+Our next step is to make our error type into an instance of \href{http://www.haskell.org/ghc/docs/latest/html/libraries/mtl/Control-Monad-Error.html}{\texttt{Error}\index{Error@\texttt{Error}}}. This is necessary for it to work with GHC's built-in error handling functions. Being an instance of \verb|error| just means that it must provide functions to create an instance either from a previous error message or by itself:
+ 
+\codesnippet{errorcheck}{143}{145}
+ 
+Then we define a type to represent functions that may throw a \verb|LispError|\index{LispError@\texttt{LispError}} or return a value. Remember how \href{http://www.cs.uu.nl/~daan/download/parsec/parsec.html\#parse}{\texttt{parse}\index{parse@\texttt{parse}}} used an \verb|Either| data type to represent exceptions? We take the same approach here:
+ 
+\codesnippet{errorcheck}{147}{147}
+ 
+Type constructors are curried just like functions, and can also be partially applied. A full type would be \verb|Either LispError Integer|\index{Either@\texttt{Either}}\index{LispError@\texttt{LispError}}\index{Integer@\texttt{Integer}} or \verb|Either| \verb|LispError| \verb|LispVal|\index{LispVal@\texttt{LispVal}}, but we want to say \verb|ThrowsError LispVal|\index{ThrowsError@\texttt{ThrowsError}} and so on. We only partially apply \verb|Either| to \verb|LispError|, creating a type constructor \verb|ThrowsError| that we can use on any data type.
+ 
+\verb|Either| is yet another instance of a monad. In this case, the ``extra information'' being passed between \verb|Either| actions is whether or not an error occurred. \verb|Bind|\index{>>@\texttt{>>}} applies its function if the \verb|Either| action holds a normal value, or passes an error straight through without computation. This is how exceptions work in other languages, but because Haskell is lazily-evaluated, there's no need for a separate control-flow construct. If \verb|bind| determines that a value is already an error, the function is never called.
+ 
+The \verb|Either| monad also provides two other functions besides the standard monadic ones:
+ 
+\begin{enumerate}
+	\item \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/mtl/Control.Monad.Error.html\#v\%3athrowError}{\texttt{throwError}}\index{throwError@\texttt{throwError}}, which takes an \verb|Error|\index{Error@\texttt{Error}} value and lifts it into the Left\index{Left@\texttt{Left}} (error) constructor of an \verb|Either|
+	\item \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/mtl/Control.Monad.Error.html\#v\%3acatchError}{\texttt{catchError}\index{catchError@\texttt{catchError}}}, which takes an \verb|Either| action and a function that turns an error into another \verb|Either| action. If the action represents an error, it applies the function, which you can use to eg. turn the error value into a normal one via return or re-throw as a different error.
+\end{enumerate}
+ 
+In our program, we'll be converting all of our errors to their string representations and returning that as a normal value. Let's create a helper function to do that for us:
+ 
+\codesnippet{errorcheck}{149}{149}
+ 
+The result of calling \verb|trapError|\index{trapError@\texttt{trapError}} is another \verb|Either|\index{Either@\texttt{Either}} action which will always have valid \verb|(Right)|\index{Right@\texttt{Right}} data. We still need to extract that data from the \verb|Either| monad so it can passed around to other functions:
+ 
+\codesnippet{errorcheck}{151}{152}
+ 
+We purposely leave extractValue undefined for a \verb|Left|\index{Left@\texttt{Left}} constructor, because that represents a programmer error. We intend to use \verb|extractValue|\index{extractValue@\texttt{extractValue}} only after a \verb|catchError|\index{catchError@\texttt{catchError}}, so it's better to fail fast than to inject bad values into the rest of the program.
+ 
+Now that we have all the basic infrastructure, it's time to start using our error-handling functions. Remember how our parser had previously just return a string saying \lstinline|"No match"| on an error? Let's change it so that it wraps and throws the original \verb|ParseError|\index{ParseError@\texttt{ParseError}}:
+ 
+\codesnippet{errorcheck}{16}{19}
+ 
+Here, we first wrap the original \verb|ParseError| with the \verb|LispError|\index{LispError@\texttt{LispError}} constructor Parser, and then use the built-in function \href{http://www.haskell.org/ghc/docs/latest/html/libraries/mtl/Control-Monad-Error.html\#v\%3AthrowError}{\texttt{throwError}\index{throwError@\texttt{throwError}}} to return that in our \verb|ThrowsError|\index{ThrowsError@\texttt{ThrowsError}} monad. Since readExpr now returns a monadic value, we also need to wrap the other case in a return function.
+ 
+Next, we change the type signature of \verb|eval|\index{eval@\texttt{eval}} to return a monadic value, adjust the return values accordingly, and add a clause to throw an error if we encounter a pattern that we don't recognize:
+ 
+\codesnippet{errorcheck}{88}{94}
+ 
+Since the function application clause calls \verb|eval| (which now returns a monadic value) recursively, we need to change that clause. First, we had to change \verb|map|\index{map@\texttt{map}} to \verb|mapM|\index{mapM@\texttt{mapM}}, which maps a monadic function over a list of values, sequences the resulting actions together with \verb|bind|\index{>>@\texttt{>>}}, and then returns a list of the inner results. Inside the Error monad, this sequencing performs all computations sequentially but throws an error value if any one of them fails---giving you \verb|Right [results]|\index{Right@\texttt{Right}} on success, or \verb|Left error|\index{Left@\texttt{Left}} on failure. Then, we used the monadic \verb|bind| operation to pass the result into the partially applied \verb|apply func|, again returning an error if either operation failed.
+ 
+Next, we change apply itself so that it throws an error if it doesn't recognize the function:
+ 
+\codesnippet{errorcheck}{96}{99}
+ 
+We didn't add a return statement to the function application \verb|($ args)|\index{\$@\texttt{\$}}. We're about to change the type of our primitives, so that the function returned from the lookup itself returns a \verb|ThrowsError|\index{ThrowsError@\texttt{ThrowsError}} action:
+ 
+\codesnippet{errorcheck}{101}{101}
+ 
+And, of course, we need to change the \verb|numericBinop|\index{numericBinop@\texttt{numericBinop}} function that implements these primitives so it throws an error if there's only one argument:
+ 
+\codesnippet{errorcheck}{110}{112}
+ 
+We use an at-pattern to capture the single-value case because we want to include the actual value passed in for error-reporting purposes. Here, we're looking for a list of exactly one element, and we don't care what that element is. We also need to use \verb|mapM|\index{mapM@\texttt{mapM}} to sequence the results of \verb|unpackNum|\index{unpackNum@\texttt{unpackNum}}, because each individual call to \verb|unpackNum| may fail with a \verb|TypeMismatch|\index{TypeMismatch@\texttt{TypeMismatch}}:
+ 
+\codesnippet{errorcheck}{114}{121}
+ 
+Finally, we need to change our \verb|main|\index{main@\texttt{main}} function to use this whole big error monad. This can get a little complicated, because now we're dealing with two monads (\verb|Error|\index{Error@\texttt{Error}} and \verb|IO|\index{IO@\texttt{IO}}). As a result, we go back to do-notation, because it's nearly impossible to use point-free style when the result of one monad is nested inside another:
+ 
+\codesnippet{errorcheck}{7}{11}
+ 
+Here's what this new function is doing:
+ 
+\begin{enumerate}
+	\item args is the list of command-line arguments
+	\item evaled is the result of:
+ 	\begin{enumerate}
+		\item taking first argument (\lstinline|args !! 0|)
+		\item parsing it (\verb|readExpr|\index{readExpr@\texttt{readExpr}})
+		\item passing it to eval (\lstinline|>>= eval|; the bind operation has higher precedence than function application)
+		\item calling show on it within the \verb|Error|\index{Error@\texttt{Error}} monad. Note also that the whole action has type \verb|IO (Either LispError String)|\index{Either@\texttt{Either}}\index{LispError@\texttt{LispError}}\index{String@\texttt{String}}, giving \verb|evaled|\index{evaled@\texttt{evaled}} type \verb|Either LispError String|. It has to be, because our \verb|trapError|\index{trapError@\texttt{trapError}} function can only convert errors to strings, and that type must match the type of normal values
+	\end{enumerate}
+	\item caught is the result of
+	\begin{enumerate}
+		\item calling \verb|trapError| on \verb|evaled|, converting errors to their string representation.
+		\item calling \verb|extractValue|\index{extractValue@\texttt{extractValue}} to get a \verb|String| out of this \verb|Either LispError String| action
+		\item printing the results through \verb|putStrLn|\index{putStrLn@\texttt{putStrLn}}
+	\end{enumerate}
+\end{enumerate}
+ 
+The complete code is therefore:
+ 
+\completecode{errorcheck}{Lisp parser with basic error-checking functionality}
+ 
+Compile and run the new code, and try throwing it a couple errors:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o errorcheck errorcheck.hs
+user>> ./errorcheck  "(+ 2 \"two\")"
+ Invalid type: expected number, found "two"
+user>> ./errorcheck "(+ 2)"
+ Expected 2 args: found values 2
+ Unrecognized primitive function args: "what?"
+\end{lstlisting}
+ 
+Some readers have reported that you need to add a \verb|--make|\index{--make@\texttt{--make}} flag to build this example, and presumably all further listings. This tells GHC to build a complete executable, searching out all depedencies listed in the import statements. The command above works on my system, but if it fails on yours, give \verb|--make| a try.

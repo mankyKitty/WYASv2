@@ -1,0 +1,66 @@
+\chapter[Building a REPL]{Building a REPL: Basic I/O}
+ 
+\chapterlinks{Building_a_REPL}
+ 
+So far, we've been content to evaluate single expressions from the command line, printing the result and exiting afterwards. This is fine for a calculator, but isn't what most people think of as ``programming.'' We'd like to be able to define new functions and variables, and refer to them later. But before we can do this, we need to build a system that can execute multiple statements without exiting the program.
+ 
+Instead of executing a whole program at once, we're going to build a read-eval-print loop. This reads in expressions from the console one at a time and executes them interactively, printing the result after each expression. Later expressions can reference variables set by earlier ones (or will be able to, after the next section), letting you build up libraries of functions.
+ 
+First, we need to import some additional \href{http://www.haskell.org/onlinereport/io.html}{IO functions}. Add the following to the top of the program:
+ 
+\codesnippet{replparser}{6}{6}
+ 
+We have to hide the try function (used in the \verb|IO|\index{IO@\texttt{IO}} module for exception handling) because we use Parsec's \verb|try|\index{try@\texttt{try}} function.
+ 
+Next, we define a couple helper functions to simplify some of our IO tasks. We'll want a function that prints out a string and immediately flushes the stream; otherwise, output might sit in output buffers and the user will never see prompts or results.
+ 
+\codesnippet{replparser}{251}{252}
+ 
+Then, we create a function that prints out a prompt and reads in a line of input:
+ 
+\codesnippet{replparser}{254}{255}
+ 
+Pull the code to parse and evaluate a string and trap the errors out of main into its own function:
+ 
+\codesnippet{replparser}{257}{258}
+ 
+And write a function that evaluates a string and prints the result:
+ 
+\codesnippet{replparser}{260}{261}
+ 
+Now it's time to tie it all together. We want to read input, perform a function, and print the output, all in an infinite loop. The built-in function \verb|interact|\index{interact@\texttt{interact}} almost does what we want, but doesn't loop. If we used the combination sequence \verb|. repeat| \verb|. interact|\index{repeat@\texttt{repeat}}, we'd get an infinite loop, but we wouldn't be able to break out of it. So we need to roll our own loop:
+ 
+\codesnippet{replparser}{263}{268}
+ 
+The underscore after the name is a typical naming convention in Haskell for monadic functions that repeat but do not return a value. \verb|until_| takes a predicate that signals when to stop, an action to perform before the test, and a function-returning-an-action to do to the input. Each of the latter two is generalized over any monad, not just \verb|IO|\index{IO@\texttt{IO}}. That's why we write their types using the type variable \verb|m|, and include the type constraint \lstinline|Monad m =>|\index{MOnad@\texttt{Monad}}\index{=>@\texttt{=>}}.
+ 
+Note also that we can write recursive actions just as we write recursive functions.
+ 
+Now that we have all the machinery in place, we can write our REPL easily:
+ 
+\codesnippet{replparser}{270}{271}
+ 
+And change our main function so it either executes a single expression, or enters the REPL and continues evaluating expressions until we type \lstinline|"quit"|:
+ 
+\codesnippet{replparser}{8}{13}
+ 
+The complete code is therefore:
+ 
+\completecode{replparser}{A parser implementing the REPL method}
+ 
+Compile and run the program, and try it out:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -fglasgow-exts -o lisp realparser.hs
+user>> ./lisp
+Lisp>>> (+ 2 3)
+ 5
+Lisp>>> (cons this '())
+ Unrecognized special form: this
+Lisp>>> (cons 2 3)
+ (2 . 3)
+Lisp>>> (cons 'this '())
+ (this)
+Lisp>>> quit
+user>>
+\end{lstlisting}

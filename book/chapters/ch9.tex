@@ -1,0 +1,88 @@
+\chapter[Creating IO Primitives]{Creating IO Primitives: File I/O}
+ 
+\chapterlinks{Creating_IO_Primitives}
+ 
+Our Scheme can't really communicate with the outside world yet, so it would be nice if we could give it some IO functions. Also, it gets really tedious typing in functions every time we start the interpreter, so it would be nice to load files of code and execute them.
+ 
+The first thing we'll need is a new constructor for \verb|LispVals|\index{LispVal@\texttt{LispVal}}. \verb|PrimitiveFuncs|\index{PrimitiveFunc@\texttt{PrimitiveFunc}} have a specific type signature that doesn't include the \verb|IO| monad, so they can't perform any IO. We want a dedicated constructor for primitive functions that perform IO:
+ 
+\codesnippet{ioparser}{35}{35}
+ 
+While we're at it, let's also define a constructor for the Scheme data type of a \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.6.1}{\texttt{port}\index{port@\texttt{port}}}. Most of our IO functions will take one of these to read from or write to:
+ 
+\codesnippet{ioparser}{33}{33}
+ 
+A \href{http://www.haskell.org/onlinereport/io.html\#sect21}{\texttt{Handle}\index{Handle@\texttt{Handle}}} is basically the Haskell notion of a port: it's an opaque data type, returned from \verb|openFile|\index{openFile@\texttt{openFile}} and similar \verb|IO| actions, that you can read and write to.
+ 
+For completeness, we ought to provide showVal methods for the new data types:
+ 
+\codesnippet{ioparser}{90}{91}
+ 
+This'll let the REPL function show values properly and not crash when you use a function that returns a port.
+ 
+We also need to update apply, so that it can handle IOFuncs:
+\codesnippet{ioparser}{138}{138}
+ 
+We'll need to make some minor changes to our parser to support \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.6.4}{\texttt{load}\index{load@\texttt{load}}}. Since Scheme files usually contain several definitions, we need to add a parser that will support several expressions, separated by whitespace. And it also needs to handle errors. We can re-use much of the existing infrastructure by factoring our basic \verb|readExpr|\index{readExpr@\texttt{readExpr}} so that it takes the actual parser as a parameter:
+ 
+\codesnippet{ioparser}{16}{22}
+ 
+Again, think of both \verb|readExpr|\index{readExpr@\texttt{readExpr}} and \verb|readExprList|\index{readExprList@\texttt{readExprList}} as specializations of the newly-renamed \verb|readOrThrow|\index{readOrThrow@\texttt{readOrThrow}}. We'll be using \verb|readExpr| in our REPL to read single expressions; we'll be using \verb|readExprList| from within load to read programs.
+ 
+Next, we'll want a new list of IO primitives, structured just like the existing primitive list:
+ 
+\codesnippet{ioparser}{378}{387}
+ 
+The only difference here is in the type signature. Unfortunately, we can't use the existing primitive list because lists cannot contain elements of different types. We also need to change the definition of \verb|primitiveBindings|\index{primitiveBindings@\texttt{primitiveBindings}} to add our new primitives:
+ 
+\codesnippet{ioparser}{327}{330}
+ 
+We've generalized \verb|makeFunc|\index{makeFunc@\texttt{makeFunc}} to take a constructor argument, and now call it on the list of \verb|ioPrimitives|\index{ioPrimitives@\texttt{ioPrimitives}} in addition to the plain old primitives.
+ 
+Now we start defining the actual functions. \verb|applyProc|\index{applyProc@\texttt{applyProc}} is a very thin wrapper around apply, responsible for destructuring the argument list into the form apply expects:
+ 
+\codesnippet{ioparser}{389}{391}
+ 
+makePort wraps the Haskell function \verb|openFile|\index{openFile@\texttt{openFile}}, converting it to the right type and wrapping its return value in the \verb|Port|\index{Port@\texttt{Port}} constructor. It's intended to be partially-applied to the \verb|IOMode|\index{IOMode@\texttt{IOMode}}, \verb|ReadMode|\index{ReadMode@\texttt{ReadMode}} for open-input-file and \verb|WriteMode|\index{WriteMode@\texttt{WriteMode}} for open-output-file:
+ 
+\codesnippet{ioparser}{393}{394}
+ 
+\verb|closePort|\index{closePort@\texttt{closePort}} also wraps the equivalent Haskell procedure, this time \verb|hClose|\index{hClose@\texttt{hClose}}:
+ 
+\codesnippet{ioparser}{396}{398}
+ 
+\verb|readProc|\index{readProc@\texttt{readProc}} (named to avoid a name conflict with the built-in read) wraps the Haskell \verb|hGetLine|\index{hGetLine@\texttt{hGetLine}} and then sends the result to \verb|parseExpr|\index{parseExpr@\texttt{parseExpr}}, to be turned into a \verb|LispVal|\index{LispVal@\texttt{LispVal}} suitable for Scheme:
+ 
+\codesnippet{ioparser}{400}{402}
+ 
+Notice how \verb|hGetLine| is of type \verb|IO String|\index{IO@\texttt{IO}}\index{String@\texttt{String}} yet \verb|readExpr| is of type \verb|String| \verb|-> ThrowsError LispVal|\index{ThrowsError@\texttt{ThrowsError}}\index{LispVal@\texttt{LispVal}}, so they both need to be converted (with \verb|liftIO|\index{liftIO@\texttt{liftIO}} and \verb|liftThrows|\index{liftThrows@\texttt{liftThrows}}, respectively) to the \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}} monad. Only then can they be piped together with the monadic bind operator. \verb|writeProc|\index{writeProc@\texttt{writeProc}} converts a \verb|LispVal| to a string and then writes it out on the specified port:
+ 
+\codesnippet{ioparser}{404}{406}
+ 
+We don't have to explicitly call \verb|show|\index{show@\texttt{show}} on the object we're printing, because \verb|hPrint|\index{hPrint@\texttt{hPrint}} takes a value of type \verb|Show a|. It's calling show for us automatically. This is why we bothered making \verb|LispVal| an instance of \verb|Show|\index{Show@\texttt{Show}}; otherwise, we wouldn't be able to use this automatic conversion and would have to call \verb|showVal|\index{showVal@\texttt{showVal}} ourselves. Many other Haskell functions also take instances of \verb|Show|, so if we'd extended this with other IO primitives, it could save us significant labor.
+ 
+\verb|readContents|\index{readContents@\texttt{readContents}} reads the whole file into a string in memory. It's a thin wrapper around Haskell's \verb|readFile|\index{readFile@\texttt{readFile}}, again just lifting the \verb|IO|\index{IO@\texttt{IO}} action into an \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}} action and wrapping it in a \verb|String|\index{String@\texttt{String}} constructor:
+ 
+\codesnippet{ioparser}{408}{409}
+ 
+The helper function \verb|load| doesn't do what Scheme's \verb|load|\index{load@\texttt{load}} does (we handle that later). Rather, it's responsible only for reading and parsing a file full of statements. It's used in two places: \verb|readAll|\index{readAll@\texttt{readAll}} (which returns a list of values) and \verb|load| (which evaluates those values as Scheme expressions).
+ 
+\codesnippet{ioparser}{411}{412}
+ 
+\verb|readAll|\index{readAll@\texttt{readAll}} then just wraps that return value with the \verb|List|\index{List@\texttt{List}} constructor:
+ 
+\codesnippet{ioparser}{414}{415}
+ 
+Implementing the actual Scheme \verb|load|\index{load@\texttt{load}} function is a little tricky, because \verb|load| can introduce bindings into the local environment. Apply, however, doesn't take an environment argument, and so there's no way for a primitive function (or any function) to do this. We get around this by implementing load as a special form:
+ 
+\codesnippet{ioparser}{129}{130}
+ 
+Finally, we might as well change our \verb|runOne|\index{runOne@\texttt{runOne}} function so that instead of evaluating a single expression from the command line, it takes the name of a file to execute and runs that as a program. Additional command-line arguments will get bound into a list \lstinline|args| within the Scheme program:
+ 
+\codesnippet{ioparser}{313}{317}
+ 
+That's a little involved, so let's go through it step-by-step. The first line takes the original primitive bindings, passes that into \verb|bindVars|\index{bindVars@\texttt{bindVars}}, and then adds a variable named \lstinline|args| that's bound to a \verb|List|\index{List@\texttt{List}} containing \verb|String|\index{String@\texttt{String}} versions of all but the first argument. (The first argument is the filename to execute.) Then, it creates a Scheme form \lstinline|(load "arg1")|, just as if the user had typed it in, and evaluates it. The result is transformed to a string (remember, we have to do this before catching errors, because the error handler converts them to strings and the types must match) and then we run the whole \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}} action. Then we print the result on \verb|STDERR|\index{STDERR@\texttt{STDERR}}. (Traditional UNIX conventions hold that \verb|STDOUT|\index{STDOUT@\texttt{STDOUT}} should be used only or program output, with any error messages going to \verb|STDERR|. In this case, we'll also be printing the return value of the last statement in the program, which generally has no meaning to anything.)
+ 
+Then we change main so it uses our new \verb|runOne|\index{runOne@\texttt{runOne}} function. Since we no longer need a third clause to handle the wrong number of command-line arguments, we can simplify it to an if statement:
+ 
+\codesnippet{ioparser}{9}{11}

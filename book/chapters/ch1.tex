@@ -1,0 +1,86 @@
+\chapter[First Steps]{First Steps: Compiling and Running}
+ 
+\chapterlinks{First_Steps}
+ 
+First, you'll need to install GHC\index{GHC}. On Linux\index{Linux}, it's often pre-installed or available via apt-get or yum. It's also downloadable from \url{http://www.haskell.org/ghc/}. A binary package is probably easiest, unless you really know what you're doing. It should download and install like any other software package. This tutorial was developed on Linux, but everything should also work on Windows\index{Windows} as long as you know how to use the DOS command line.
+ 
+For UNIX\index{UNIX} (or \href{http://www.gnu.org/software/emacs/windows/ntemacs.html}{Windows Emacs}) users, there is a pretty good \href{http://haskell.org/haskell-mode/}{Emacs mode}, including syntax highlighting and automatic indentation. Windows users can use Notepad or any other text editor: Haskell syntax is fairly Notepad-friendly, though you have to be careful with the indentation. \href{http://www.eclipse.org/}{Eclipse\index{Eclipse}} users might want to try the \href{http://eclipsefp.sourceforge.net/haskell/}{Function Programming\index{Function Programming}} plug-in. Finally, there's also a \href{http://www.haskell.org/visualhaskell/}{Haskell plugin for Visual Studio\index{Visual Studio}} using the GHC compiler.
+ 
+Now, it's time for your first Haskell program. This program will read a name off the command line and then print a greeting. Create a file ending in \verb|.hs| and type the following text:
+ 
+\completecode{hello}{Your first Haskell program}
+ 
+Let's go through this code. The first two lines specify that we'll be creating a module named \verb|Main|\index{Main@\texttt{Main}} that imports the \href{http://www.haskell.org/onlinereport/system.html}{\texttt{System}\index{System@\texttt{System}}} module. Every Haskell program begins with an action called \verb|main|\index{main@\texttt{main}} in a module named \verb|Main|. That module may import others, but it must be present for the compiler to generate an executable file. Haskell is case-sensitive: module names are always capitalized, declarations always uncapitalized.
+ 
+The line \lstinline|main :: IO ()| is a type declaration: it says that the action \verb|main| has type \lstinline|IO ()|\index{IO@\texttt{IO}}. Type declarations in Haskell are optional: the compiler figures them out automatically, and only complains if they differ from what you've specified. In this tutorial, I specify the types of all declarations explicitly, for clarity. If you're following along at home, you may want to omit them, because it's less to change as we build our program.
+ 
+The \verb|IO| type is an instance of something called a monad\index{monad}, which is a scary name for a not-so-scary concept. Basically, a monad is a way of saying ``there's some extra information attached to this value, which most functions don't need to worry about.'' In this example, the ``extra information'' is the fact that this action performs IO\index{I/O}, and the basic value is nothing, represented as \lstinline|()|. Monadic values are often called ``actions,'' because the easiest way to think about the \verb|IO| monad is a sequencing of actions that each might affect the outside world.
+ 
+Haskell is a declarative language\index{declarative language}: instead of giving the computer a sequence of instructions to carry out, you give it a collection of definitions that tell it how to perform every function it might need. These definitions use various compositions of actions and functions. The compiler figures out an execution path that puts everything together.
+ 
+To write one of these definitions, you set it up as an equation. The left hand side defines a name, and optionally one or more patterns (explained later) that will bind variables. The right hand side defines some composition of other definitions that tells the computer what to do when it encounters the name. These equations behave just like ordinary equations in algebra: you can always substitute the right hand side for the left within the text of the program, and it'll evaluate to the same value. Called \textit{referential transparency}\index{referential transparency}, this property makes it significantly easier to reason about Haskell programs than other languages.
+ 
+How will we define our \verb|main|\index{main@\texttt{main}} action? We know that it must be an \verb|IO|\index{IO@\texttt{IO}} action, and that we want it to read the command line args and print some output. There are two ways to create an \verb|IO| action:
+ 
+\begin{enumerate}
+	\item Lift an ordinary value into the \verb|IO| monad, using the \verb|return| function.
+	\item Combine two existing \verb|IO| actions.
+\end{enumerate}
+ 
+Since we want to do two things, we'll take the second approach. The built-in action \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/base/System.Environment.html\#v\%3AgetArgs}{\texttt{getArgs}\index{getArgs@\texttt{getArgs}}} reads the command-line arguments and stores them in a list of strings. The built-in function \verb|putStrLn|\index{putStrLn@\texttt{putStrln}} takes a string and writes it to the console.
+ 
+To combine them, we use a do-block. A do-block consists of a series of lines, all lined up with the first non-whitespace character after the do. Each line can have one of two forms:
+ 
+\begin{enumerate}
+	\item \verb|name| \lstinline|<-| \verb|action|
+	\item \verb|action|
+\end{enumerate}
+ 
+The first form takes the result of the \verb|action| and binds it to \verb|name|. For example, if the type of the action is \lstinline|IO [String]|\index{String@\texttt{String}} (an IO action returning a list of strings, as with \verb|getArgs|), then \verb|name| will be bound to the list of strings returned. The second form just executes the action, sequencing it with the previous line through the \verb|>>|\index{>>@\texttt{>>}} (pronounced ``bind'') operator. This operator has different semantics for each monad: in the case of the IO monad\index{IO@\texttt{IO}}, it executes the actions sequentially, performing whatever external side-effects that result. Because the semantics of this composition depends upon the particular monad used, you cannot mix actions of different monad types in the same do-block.
+ 
+Of course, these actions may themselves be the result of functions or complicated expressions. In this example, we first take index 0 of the argument list (\lstinline|args !! 0|), concatenate it onto the end of the string ``Hello, '' (\lstinline|"Hello, " ++|), and finally pass that to \lstinline|putStrLn| for IO sequencing. \verb|Strings| are lists of characters in Haskell, so you can use any of the list functions and operators on them. A full table of the standard operators and their precedences follows:
+ 
+\begin{table}[h]
+  \caption{Operators and their precedence}
+  \begin{tabular}[c]{| p{2cm} | l | l | p{5cm} |}
+	\hline
+	\textbf{\small{Operator(s)}} & \textbf{\small{Precedence}} & \textbf{\small{Associativity}} & \textbf{\small{Description}} \\ \hline
+ 
+	\lstinline|.|			& 9 & Right & Function composition \\ \hline
+	\lstinline|!!| 			& 9 & Left  & List indexing \\ \hline
+	\lstinline|^|, \lstinline|^^|, 
+	\lstinline|**| 			& 8 & Right & Exponentiation (integer, fractional, and floating-point) \\ \hline
+	\lstinline|*|, \lstinline|/| 	& 7 & Left  & Multiplication, Division \\ \hline
+	\lstinline|+|, \lstinline|-| 	& 6 & Left  & Addition, Subtraction \\ \hline
+	\lstinline|:| 			& 5 & Right & Cons (list construction) \\ \hline
+	\lstinline|++| 			& 5 & Right & List Concatenation \\ \hline
+	\lstinline|`elem`|,
+	\lstinline|`notElem`| 		& 4 & Left  & List Membership \\ \hline
+	\lstinline|==|, \lstinline|/=|, 
+	\lstinline|<|, \lstinline|<=|, 
+	\lstinline|>=|, \lstinline|>|   & 4 & Left  & Equals, Not-equals, and other relation operators \\ \hline
+	\lstinline|&&| 			& 3 & Right & Logical And \\ \hline
+	\lstinline!||! 			& 2 & Right & Logical Or \\ \hline
+	\lstinline|>>|, \lstinline|>>=| & 1 & Left  & Monadic Bind, Monadic Bind (piping value to next function) \\ \hline
+	\lstinline|=<<| 		& 1 & Right & Reverse Monadic Bind (same as above, but arguments reversed) \\ \hline
+	\verb|$| 			& 0 & Right & Infix Function Application (same as \verb|f x|,but right-associative instead of left) \\ \hline
+ \end{tabular}
+\end{table}
+ 
+To compile and run the program, try something like this:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -o hello_you hello.hs
+user>> ./hello_you Jonathan
+ Hello, Jonathan
+\end{lstlisting} 
+ 
+The \verb|-o|\index{-o@\texttt{-o}} option specifies the name of the executable you want to create, and then you just specify the name of the Haskell source file.
+ 
+\section{Exercises}
+ 
+\begin{enumerate}
+	\item Change the program so it reads two arguments from the command line, and prints out a message using both of them.
+	\item Change the program so it performs a simple arithmetic operation on the two arguments and prints out the result. You can use \verb|read|\index{read@\texttt{read}} to convert a string to a number, and \verb|show|\index{show@\texttt{show}} to convert a number back into a string. Play around with different operations.
+	\item \verb|getLine|\index{getLine@\texttt{getLine}} is an \verb|IO|\index{IO@\texttt{IO}} action that reads a line from the console and returns it as a string. Change the program so it prompts for a name, reads the name, and then prints that instead of the command line value.
+\end{enumerate}

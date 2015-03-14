@@ -1,0 +1,163 @@
+\chapter{Evaluation, Part 1}
+ 
+\chapterlinks{Evaluation\%2C_Part_1}
+ 
+\section{Beginning the Evaluator}
+\editsection{Evaluation\%2C_Part_1}{1}
+ 
+Currently, we've just been printing out whether or not we recognize the given program fragment. We're about to take the first steps towards a working Scheme interpreter: assigning values to program fragments. We'll be starting with baby steps, but fairly soon you'll be progressing to doing working computations.
+ 
+Let's start by telling Haskell how to print out a string representation of the various possible \verb|LispVals|\index{LispVal@\texttt{LispVal}}:
+ 
+\codesnippet{evaluator1}{70}{75}
+ 
+This is our first real introduction to pattern matching\index{pattern mataching}. Pattern matching is a way of destructuring an algebraic data type, selecting a code clause based on its constructor and then binding the components to variables. Any constructor can appear in a pattern; that pattern matches a value if the tag is the same as the value's tag and all subpatterns match their corresponding components. Patterns can be nested arbitrarily deep, with matching proceeding in an inside \lstinline|->|\index{->@\texttt{->}} outside, left \lstinline|->| right order. The clauses of a function definition are tried in textual order, until one of the patterns matches. If this is confusing, you'll see some examples of deeply-nested patterns when we get further into the evaluator.
+ 
+For now, you only need to know that each clause of the above definition matches one of the constructors of \verb|LispVal|, and the right-hand side tells what to do for a value of that constructor.
+ 
+The \verb|List|\index{List@\texttt{List}} and \verb|DottedList|\index{DottedList@\texttt{DottedList}} clauses work similarly, but we need to define a helper function \verb|unwordsList|\index{unwordsList@\texttt{unwordsList}} to convert the contained list into a string:
+ 
+\codesnippet{evaluator1}{76}{77}
+ 
+The \verb|unwordsList| function works like the Haskell Prelude's\index{Haskell Prelude} \verb|unwords|\index{unwords@\texttt{unwords}} function, which glues together a list of words with spaces. Since we're dealing with a list of \verb|LispVals|\index{LispVal@\texttt{LispVal}} instead of words, we define a function that first converts the \verb|LispVals| into their string representations and then applies unwords to it:
+ 
+\codesnippet{evaluator1}{79}{80}
+ 
+Our definition of \verb|unwordsList| doesn't include any arguments. This is an example of point-free style: writing definitions purely in terms of function composition and partial application, without regard to individual values or ``points.'' Instead, we define it as the composition of a couple built-in functions. First, we partially-apply \verb|map|\index{map@\texttt{map}} to \verb|showVal|\index{showVal@\texttt{showVal}}, which creates a function that takes a list of \verb|LispVals| and returns a list of their string representations. Haskell functions are curried: this means that a function of two arguments, like \verb|map|, is really a function that returns a function of one argument. As a result, if you supply only a single argument, you get back a function one argument that you can pass around, compose, and apply later. In this case, we compose it with \verb|unwords|\index{unwords@\texttt{unwords}}: \lstinline|map showVal| converts a list of \verb|LispVals| to a list of their \verb|String|\index{String@\texttt{String}} representations, and then unwords joins the result together with spaces.
+ 
+We used the function \href{http://www.haskell.org/onlinereport/standard-prelude.html\#tShow}{\texttt{show}\index{show@\texttt{show}}} above. This standard Haskell function lets you convert any type that's an instance of the class \verb|Show|\index{Show@\texttt{Show}} into a string. We'd like to be able to do the same with \verb|LispVal|, so we make it into a member of the class \verb|Show|, defining its \verb|show| method as \verb|showVal|\index{showVal@\texttt{showVal}}:
+ 
+\codesnippet{evaluator1}{82}{82}
+ 
+A full treatment of typeclasses is beyond the scope of this tutorial; you can find more information in \href{http://www.haskell.org/tutorial/classes.html}{other tutorials} and the \href{http://www.haskell.org/onlinereport/decls.html\#sect4.3}{Haskell 98 report\index{Haskell 98 Report}}.
+ 
+Let's try things out by changing our readExpr function so it returns the string representation of the value actually parsed, instead of just \lstinline|"Found value"|:
+ 
+\codesnippet{evaluator1}{13}{15}
+ 
+The complete code is therefore:
+ 
+\completecode{evaluator1}{A parser using pattern matching}
+ 
+And compile and run...
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o parser evaluator1.hs
+user>> ./parser "(1 2 2)"
+ Found (1 2 2)
+user>> ./parser "'(1 3 (\"this\" \"one\"))"
+ Found (quote (1 3 ("this" "one")))
+\end{lstlisting}
+ 
+\section{Beginnings of an Evaluator: Primitives}
+\editsection{Evaluation\%2C_Part_1}{2}
+ 
+Now, we start with the beginnings of an evaluator. The purpose of an evaluator is to map some ``code'' data type into some ``data'' data type, the result of the evaluation. In Lisp, the data types for both code and data are the same, so our evaluator will return a \verb|LispVal|. Other languages often have more complicated code structures, with a variety of syntactic forms.
+ 
+Evaluating numbers, strings, booleans, and quoted lists is fairly simple: return the datum itself.
+ 
+\codesnippet{evaluator2}{85}{89}
+ 
+This introduces a new type of pattern. The notation \lstinline|val@(String _)| matches against any \verb|LispVal|\index{LispVal@\texttt{LispVal}} that's a string and then binds val to the whole \verb|LispVal|, and not just the contents of the \verb|String|\index{String@\texttt{String}} constructor. The result has type \verb|LispVal| instead of type \verb|String|. The underbar is the ``don't care'' variable, matching any value yet not binding it to a variable. It can be used in any pattern, but is most useful with \lstinline|@|-patterns (where you bind the variable to the whole pattern) and with simple constructor-tests where you're just interested in the tag of the constructor.
+ 
+The last clause is our first introduction to nested patterns. The type of data contained by \verb|List|\index{List@\texttt{List}} is \verb|[LispVal]|, a list of \verb|LispVals|. We match that against the specific two-element list \lstinline|[Atom "quote", val]|, a list where the first element is the symbol \lstinline|"quote"| and the second element can be anything. Then we return that second element.
+ 
+Let's integrate eval into our existing code. Start by changing \verb|readExpr|\index{readExpr@\texttt{readExpr}} back so it returns the expression instead of a string representation of the expression:
+ 
+\codesnippet{evaluator2}{12}{15}
+ 
+And then change our \verb|main|\index{main@\texttt{main}} function to read an expression, evaluate it, convert it to a string, and print it out. Now that we know about the \lstinline|>>=|\index{>>=@\texttt{>>=}} monad sequencing operator and the function composition operator, let's use them to make this a bit more concise:
+ 
+\codesnippet{evaluator2}{6}{7}
+ 
+Here, we take the result of the \verb|getArgs|\index{getArgs@\texttt{getArgs}} action (a list of \verb|strings|) and pass it into the composition of:
+ 
+\begin{enumerate}
+	\item Take the first value (\lstinline|(!! 0)|). This notation is known as an operator section: it's telling the compiler to partially-apply the list indexing operator to 0, giving you back a function that takes the first element of whatever list it's passed.
+	\item Parse it (\verb|readExpr|\index{readExpr@\texttt{readExpr}})
+	\item Evaluate it (\verb|eval|\index{eval@\texttt{eval}})
+	\item Convert it to a string (\verb|show|\index{show@\texttt{show}})
+	\item Print it (\verb|putStrLn|\index{putStrLn@\texttt{putStrLn}})
+\end{enumerate}
+ 
+The complete code is therefore:
+ 
+\completecode{evaluator2}{The evaluator skeleton}
+ 
+Compile and run the code the normal way:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o eval evaluator2.hs
+user>> ./eval "'atom" 
+ atom
+user>> ./eval 2
+ 2
+user>> ./eval "\"a string\""
+ "a string"
+user>> ./eval "(+ 2 2)"
+ 
+Fail: eval.hs:83: Non-exhaustive patterns in function eval
+\end{lstlisting}
+ 
+We still can't do all that much useful with the program (witness the failed \lstinline|(+ 2 2)| call), but the basic skeleton is in place. Soon, we'll be extending it with some functions to make it useful.
+ 
+\section{Adding Basic Primitives}
+\editsection{Evaluation\%2C_Part_1}{3}
+ 
+Next, we'll improve our Scheme so we can use it as a simple calculator. It's still not yet a ``programming language'', but it's getting close.
+ 
+Begin by adding a clause to \verb|eval|\index{eval@\texttt{eval}} to handle function application. Remember that all clauses of a function definition must be placed together and are evaluated in textual order, so this should go after the other \verb|eval| clauses:
+ 
+\codesnippet{evaluator3}{89}{89}
+ 
+This is another nested pattern, but this time we match against the cons operator \lstinline|:| instead of a literal list. Lists in Haskell are really syntactic sugar for a change of cons applications and the empty list: \lstinline|[1, 2, 3, 4] = 1:(2:(3:(4:[])))|. By pattern-matching against cons itself instead of a literal list, we're saying ``give me the rest of the list'' instead of ``give me the second element of the list.'' For example, if we passed \lstinline[language=Lisp]|(+ 2 2)| to \verb|eval|, func would be bound to \lstinline|+| and \verb|args| would be bound to \lstinline|[Number 2, Number 2]|.
+ 
+The rest of the clause consists of a couple functions we've seen before and one we haven't defined yet. We have to recursively evaluate each argument, so we map eval over the args. This is what lets us write compound expressions like \lstinline|(+ 2 (- 3 1) (* 5 4))|. Then we take the resulting list of evaluated arguments, and pass it and the original function to apply:
+ 
+\codesnippet{evaluator3}{91}{92}
+ 
+The built-in function lookup looks up a key (its first argument) in a list of pairs. However, lookup will fail if no pair in the list contains the matching key. To express this, it returns an instance of the built-in type Maybe. We use the function maybe to specify what to do in case of either success or failure. If the function isn't found, we return a \lstinline|Bool False|\index{Bool@\texttt{Bool}} value, equivalent to \lstinline|#f| (we'll add more robust error-checking later). If it is found, we apply it to the arguments using \verb|($ args)|\index{\$@\texttt{\$}}, an operator section of the function application operator.
+ 
+Next, we define the list of primitives that we support:
+ 
+\codesnippet{evaluator3}{94}{101}
+ 
+Look at the type of primitives. It is a list of pairs, just like lookup expects, but the values of the pairs are functions from \verb|[LispVal]|\index{LispVal@\texttt{LispVal}} to \verb|LispVal|. In Haskell, you can easily store functions in other data structures, though the functions must all have the same type.
+ 
+Also, the functions that we store are themselves the result of a function, \verb|numericBinop|\index{numericBinop@\texttt{numericBinop}}, which we haven't defined yet. This takes a primitive Haskell function (often an operator section) and wraps it with code to unpack an argument list, apply the function to it, and wrap the result up in our \verb|Number|\index{Number@\texttt{Number}} constructor.
+ 
+\codesnippet{evaluator3}{103}{113}
+ 
+As with R5RS Scheme\index{R5RS Scheme}, we don't limit ourselves to only two arguments. Our numeric operations can work on a list of any length, so \lstinline|(+ 2 3 4) = 2 + 3 + 4|, and \lstinline|(- 15 5 3 2) = 15 - 5 - 3 - 2|. We use the built-in function \verb|foldl1|\index{foldl@\texttt{foldl}} to do this. It essentially changes every cons operator in the list to the binary function we supply, op.
+ 
+Unlike R5RS Scheme, we're implementing a form of weak typing. That means that if a value can be interpreted as a number (like the string \verb|"2"|), we'll use it as one, even if it's tagged as a string. We do this by adding a couple extra clauses to \verb|unpackNum|\index{unpackNUm@\texttt{unpackNum}}. If we're unpacking a string, attempt to parse it with Haskell's built-in reads function, which returns a list of pairs of (parsed value, remaining string).
+ 
+For lists, we pattern-match against the one-element list and try to unpack that. Anything else falls through to the next case.
+ 
+If we can't parse the number, for any reason, we'll return 0 for now. We'll fix this shortly so that it signals an error.
+ 
+The complete code is therefore:
+ 
+\completecode{evaluator3}{A basic evaluator}
+ 
+Compile and run this the normal way. Note how we get nested expressions ``for free'' because we call \verb|eval|\index{eval@\texttt{eval}} on each of the arguments of a function:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o eval neweval.hs
+user>> ./eval "(+ 2 2)"
+ 4
+user>> ./eval "(+ 2 (-4 1))"
+ 2
+user>> ./eval "(+ 2 (- 4 1))"
+ 5
+user>> ./eval "(- (+ 4 6 3) 3 5 2)"
+ 3
+\end{lstlisting}
+ 
+\section{Exercises}
+ 
+\begin{enumerate}
+	\item Add primitives to perform the various \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.3}{type-testing} functions of R5RS\index{R5RS Scheme}: \verb|symbol?|\index{symbol?@\texttt{symbol?}}, \verb|string?|\index{string?@\texttt{string?}}, \verb|number?|\index{number?@\texttt{number?}}, etc.
+	\item Change \verb|unpackNum|\index{unpackNum@\texttt{unpackNum}} so that it always returns 0 if the value is not a number, even if it's a string or list that could be parsed as a number.
+	\item Add the \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html\#\%_sec_6.3.3}{symbol-handling functions} from R5RS. A symbol is what we've been calling an \verb|Atom| in our data constructors.
+\end{enumerate}

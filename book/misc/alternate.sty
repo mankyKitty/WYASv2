@@ -1,0 +1,63 @@
+\usepackage{listings} 		% for code segments
+\usepackage{color} 		% for links and code highlighting
+\usepackage{makeidx} 		% for index of functions, programs, and other proper nouns
+\usepackage[pdftex]{hyperref}	% for external links (light blue) and table of contents and index links (dark blue)
+\usepackage{graphicx}		% for titlepage logo
+ 
+\setcounter{secnumdepth}{0} 	% number chapters
+\setcounter{tocdepth}{3}	% list chapters, sections, subsections, and subsubsections in the table of contents
+ 
+\makeindex
+ 
+\renewcommand{\href}[2]{#2\footnote{\url{#1}}}
+ 
+\newcommand{\chapterlinks}[1]{}
+ 
+\newcommand{\editsection}[2]{}
+ 
+% settings for links and PDF document info
+\hypersetup{pdftitle={Write Yourself a Scheme in 48 Hours},
+	    pdfauthor={Wikibooks contributors},
+	    pdfsubject=Programming,
+	    pdfkeywords={Haskell, Scheme interpreter},
+%
+	    colorlinks=false
+}
+ 
+% color definitions for code highlighting - also used manually in document (in for example parseString)
+\definecolor{comment}{gray}{0}
+\definecolor{string}{gray}{0}
+\definecolor{identifier}{gray}{0}
+\definecolor{keyword}{gray}{0}
+ 
+% general code listing format
+% inline operators, code snippets, and references to code use \lstinline
+% inline function names and keywords use \verb
+% inline general programming terms like list, boolean, funtion, etc use neither
+\lstset{language=Haskell,
+%
+	frame=leftline,
+%	
+	basicstyle=\small,
+%	
+	showstringspaces=false,
+	breaklines=true,
+%	
+	morekeywords=define,
+	escapechar=; % manually format segments between semicolons (see for example parseString)
+}
+ 
+\newcommand{\completecode}[2]{}
+ 
+\newcommand{\codesnippet}[3] % format for short snippets of code: \codesnippet{filename}{first line number}{last line number}
+	   {\lstinputlisting[firstline=#2,
+			     lastline=#3]
+			    {code/#1.hs}
+	   }
+ 
+\lstdefinelanguage{shell}{ % format shell commands
+	morekeywords={user,ghc,Lisp},
+	morestring=[b]"
+}
+ 
+\newcommand{\highlightcode}[1]{\underline{\textbf{\texttt{#1}}}} % highlight code mentioned in text, used in ch2

@@ -1,0 +1,272 @@
+\chapter[Towards a Standard Library]{Towards a Standard Library: Fold and Unfold}
+ 
+\chapterlinks{Towards a Standard Library}
+ 
+\lstset{numbers=none}
+ 
+Our Scheme is almost complete now, but it's still rather hard to use. At the very least, we'd like a library of standard list-manipulation functions that we can use to perform some common computations.
+ 
+Rather than using a typical Scheme implementation, defining each list function in terms of a recursion on lists, we'll implement two primitive recursion operators (\verb|fold|\index{fold@\texttt{fold}} and \verb|unfold|\index{unfold@\texttt{unfold}}) and then define our whole library based on those. This style is used by the \href{http://www.haskell.org/onlinereport/standard-prelude.html}{Haskell Prelude}: it gives you more concise definitions, less room for error, and good practice using fold to capture iteration.
+ 
+We'll start by defining a few obvious helper functions. \verb|not|\index{not@\texttt{not}} and \verb|null|\index{null@\texttt{null}} are defined exactly as you'd expect it, using if statements:
+ 
+\begin{lstlisting}
+(define (not x)
+  (if x 
+      #f
+      #t))
+ 
+(define (null? obj)
+  (if (eqv? obj '())
+      #t
+      #f))
+\end{lstlisting}
+ 
+We can use the \verb|varArgs|\index{varArgs@\texttt{varArgs}} feature to define list, which just returns a list of its arguments:
+ 
+\begin{lstlisting}
+(define (list . objs)
+  objs)
+\end{lstlisting}
+ 
+We also want an \verb|id|\index{id@\texttt{id}} function, which just returns its argument unchanged. This may seem completely useless---if you already have a value, why do you need a function to return it? However, several of our algorithms expect a function that tells us what to do with a given value. By defining \verb|id|, we let those higher-order functions work even if we don't want to do anything with the value.
+ 
+\begin{lstlisting}
+(define (id obj)
+   obj)
+\end{lstlisting}
+ 
+Similarly, it'd be nice to have a \verb|flip|\index{flip@\texttt{flip}} function, in case we want to pass in a function that takes its arguments in the wrong order:
+ 
+\begin{lstlisting}
+(define (flip func)
+  (lambda (arg1 arg2)
+    (func arg2 arg1)))
+\end{lstlisting}
+ 
+Finally, we add \verb|curry|\index{curry@\texttt{curry}} and \verb|compose|\index{compose@\texttt{compose}}, which work like their Haskell equivalents (partial-application and the dot operator, respectively).
+ 
+\begin{lstlisting}
+(define (curry func arg1)
+  (lambda (arg)
+    (apply func (cons arg1 arg))))
+ 
+(define (compose f g)
+  (lambda (arg)
+    (f (apply g arg))))
+\end{lstlisting}
+ 
+We might as well define some simple library functions that appear in the Scheme standard:
+ 
+\begin{lstlisting}
+(define zero?
+  (curry = 0))
+ 
+(define positive?
+  (curry < 0))
+ 
+(define negative?
+  (curry > 0))
+ 
+(define (odd? num)
+  (= (mod num 2) 1))
+ 
+(define (even? num)
+  (= (mod num 2) 0))
+\end{lstlisting}
+ 
+These are basically done just as you'd expect them. Note the usage of curry to define \verb|zero?|\index{zero?@\texttt{zero?}}, \verb|positive?|\index{positive?@\texttt{positive?}} and \verb|negative?|\index{negative?@\texttt{negative?}}. We bind the variable \verb|zero?| to the function returned by \verb|curry|\index{curry@\texttt{curry}}, giving us an unary function that returns true if its argument is equal to zero.
+ 
+Next, we want to define a \verb|fold|\index{fold@\texttt{fold}} function that captures the basic pattern of recursion over a list. The best way to think about \verb|fold| is to picture a list in terms of its infix constructors: \lstinline|[1, 2, 3, 4] = 1:2:3:4:[]| in Haskell or \lstinline|(1 . (2 . (3 . (4 . NIL))))| in Scheme. A \verb|fold| function replaces every constructor with a binary operation, and replaces \verb|NIL|\index{NIL@\texttt{NIL}} with the accumulator. So, for example, \lstinline|(fold + 0 '(1 2 3 4)) = (1 + (2 + (3 + (4 + 0))))|.
+ 
+With that definition, we can write our \verb|fold|\index{fold@\texttt{fold}} function. Start with a right-associative version to mimic the above examples:
+ 
+\begin{lstlisting}
+(define (foldr func end lst)
+  (if (null? lst)
+      end
+      (func (car lst) (foldr func end (cdr lst)))))
+\end{lstlisting}
+ 
+The structure of this function mimics our definition almost exactly. If the list is null, replace it with the end value. If not, apply the function to the car of the list and to the result of folding this function and end value down the rest of the list. Since the right-hand operand is folded up first, you end up with a right-associative \verb|fold|.
+ 
+We also want a left-associative version. For most associative operations like \lstinline|+|\index{+@\texttt{+}} and \lstinline|*|\index{*@\texttt{*}}, the two of them are completely equivalent. However, there is at least one important binary operation that is not associative: \verb|cons|\index{cons@\texttt{cons}}. For all our list manipulation functions, then, we'll need to deliberately choose between left- and right-associative \verb|folds|\index{folds@\texttt{folds}}.
+ 
+\begin{lstlisting}
+(define (foldl func accum lst)
+  (if (null? lst)
+      accum
+      (foldl func (func accum (car lst)) (cdr lst))))
+\end{lstlisting}
+ 
+This begins the same way as the right-associative version, with the test for null that returns the accumulator. This time, however, we apply the function to the accumulator and first element of the list, instead of applying it to the first element and the result of folding the list. This means that we process the beginning first, giving us left-associativity. Once we reach the end of the list, \lstinline|'()|, we then return the result that we've been progressively building up.
+ 
+Note that func takes its arguments in the opposite order from \verb|foldr|\index{foldr@\texttt{foldr}}. In \verb|foldr|, the accumulator represents the rightmost value to tack onto the end of the list, after you've finished recursing down it. In \verb|foldl|\index{foldl@\texttt{foldl}}, it represents the completed calculation for the leftmost part of the list. In order to preserve our intuitions about commutativity of operators, it should therefore be the left argument of our operation in \verb|foldl|, but the right argument in \verb|foldr|.
+ 
+Once we've got our basic \verb|folds|\index{fold@\texttt{fold}}, we can define a couple convenience names to match typical Scheme usage:
+ 
+\begin{lstlisting}
+(define fold foldl)
+(define reduce fold)
+\end{lstlisting}
+ 
+These are just new variables bound to the existing functions: they don't define new functions. Most Schemes call \verb|fold|\index{fold@\texttt{fold}} \verb|\textit{reduce}|\index{reduce@\texttt{reduce}} or plain old \verb|fold|, and don't make the distinction between \verb|foldl|\index{foldl@\texttt{foldl}} and \verb|foldr|\index{foldr@\texttt{foldr}}. We define it to be \verb|foldl|, which happens to be tail-recursive and hence runs more efficiently than \verb|foldr| (it doesn't have to recurse all the way down to the end of the list before it starts building up the computation). Not all operations are associative, however; we'll see some cases later where we have to use \verb|foldr| to get the right result.
+ 
+Next, we want to define a function that is the opposite of \verb|fold|. Given an unary function, an initial value, and a unary predicate, it continues applying the function to the last value until the predicate is true, building up a list as it goes along. This is essentially what generators are in Python or Icon:
+ 
+\begin{lstlisting}
+(define (lstlisting func init pred)
+  (if (pred init)
+      (cons init '())
+      (cons init (unfold func (func init) pred))))
+\end{lstlisting}
+ 
+As usual, our function structure basically matches the definition. If the predicate is true, then we cons a \lstinline|'()| onto the last value, terminating the list. Otherwise, cons the result of unfolding the next value \lstinline|(func init)| onto the current value.
+ 
+In academic functional programming literature, folds are often called catamorphisms\index{catamorphism}, unfolds are often called anamorphisms, and the combinations of the two are often called hylomorphisms. They're interesting because any for-each loop can be represented as a catamorphism. To convert from a loop to a \verb|foldl|\index{foldl@\texttt{foldl}}, package up all mutable variables in the loop into a data structure (records work well for this, but you can also use an algebraic data type or a list). The initial state becomes the accumulator; the loop body becomes a function with the loop variables as its first argument and the iteration variable as its second; and the list becomes, well, the list. The result of the fold function is the new state of all the mutable variables.
+ 
+Similarly, every for-loop (without early exits) can be represented as a hylomorphism\index{hypermorphism}. The initialization, termination, and step conditions of a for-loop define an anamorphism that builds up a list of values for the iteration variable to take. Then, you can treat that as a for-each loop and use a catamorphism to break it down into whatever state you wish to modify.
+ 
+Let's go through a couple examples. We'll start with typical \verb|sum|\index{sum@\texttt{sum}}, \verb|product|\index{product@\texttt{product}}, \verb|and|\index{and@\texttt{and}}, \verb|or|\index{or@\texttt{or}} functions:
+ 
+\begin{lstlisting}
+(define (sum . lst)
+  (fold + 0 lst))
+ 
+(define (product . lst)
+  (fold * 1 lst))
+ 
+(define (and . lst)
+  (fold && #t lst))
+ 
+(define (or . lst)
+  (fold || #f lst))
+\end{lstlisting}
+ 
+These all follow from the definitions:
+ 
+\begin{lstlisting}
+(sum 1 2 3 4) = 1 + 2 + 3 + 4 + 0 = (fold + 0 '(1 . (2 . (3 . (4 . NIL)))))
+(product 1 2 3 4) = 1 * 2 * 3 * 4 * 1 = (fold * 1 '(1 . (2 . (3 . (4 . NIL)))))
+(and #t #t #f) = #t && #t && #f && #t = (fold && #t '(#t . (#t . (#f . NIL))))
+(or #t #t #f) = #t || #t || #f || #f = (fold || #f '(#t . (#t . (#f . NIL)))
+\end{lstlisting}
+ 
+Since all of these operators are associative, it doesn't matter whether we use \verb|foldr|\index{foldr@\texttt{foldr}} or \verb|foldl|\index{foldl@\texttt{foldl}}. We replace the cons constructor with the operator, and the \verb|nil|\index{nil@\texttt{nil}} constructor with the identity element for that operator.
+ 
+Next, let's try some more complicated operators. \verb|max|\index{max@\texttt{max}} and \verb|min|\index{min@\texttt{min}} find the maximum and minimum of their arguments, respectively:
+ 
+\begin{lstlisting}
+(define (max first . num-list)
+  (fold (lambda (old new)
+                (if (> old new) old new))
+        first
+        num-list))
+ 
+(define (min first . num-list)
+  (fold (lambda (old new)
+                (if (< old new) old new))
+        first
+        num-list))
+\end{lstlisting}
+ 
+It's not immediately obvious what operation to fold over the list, because none of the built-ins quite qualify. Instead, think back to fold as a representation of a foreach loop. The accumulator represents any state we've maintained over previous iterations of the loop, so we'll want it to be the maximum value we've found so far. That gives us our initialization value: we want to start off with the leftmost variable in the list (since we're doing a \verb|foldl|\index{foldl@\texttt{foldl}}). Now recall that the result of the operation becomes the new accumulator at each step, and we've got our function. If the previous value is greater, keep it. If the new value is greater, or they're equal, return the new value. Reverse the operation for min.
+ 
+How about length? We know that we can find the length of a list by counting down it, but how do we translate that into a \verb|fold|\index{fold@\texttt{fold}}?
+ 
+\begin{lstlisting}
+(define (length lst)
+  (fold (lambda (x y) 
+                (+ x 1))
+        0
+        lst))
+\end{lstlisting}
+ 
+Again, think in terms of its definition as a loop. The accumulator starts off at 0 and gets incremented by 1 with each iteration. That gives us both our initialization value---0---and our function---\lstinline|(lambda (x y) (+ x 1))|. Another way to look at this is ``The length of a list is 1 + the length of the sublist to its left.''
+ 
+Let's try something a bit trickier: \verb|reverse|\index{reverse@\texttt{reverse}}.
+ 
+\begin{lstlisting}
+(define (reverse lst)
+  (fold (flip cons) '() lst))
+\end{lstlisting}
+ 
+The function here is fairly obvious: if you want to reverse two cons cells, you can just flip cons so it takes its arguments in the opposite order. However, there's a bit of subtlety at work. Ordinary lists are right associative: \lstinline|(1 2 3 4) = (1 . (2 . (3 . (4 . NIL))))|. If you want to reverse this, you need your fold to be left associative: \lstinline|(reverse '(1 2 3 4)) = (4 . (3 . (2 . (1 . NIL))))|. Try it with a \verb|foldr|\index{foldr@\texttt{foldr}} instead of a \verb|foldl|\index{foldl@\texttt{foldl}} and see what you get.
+ 
+There's a whole family of member and assoc functions, all of which can be represented with folds. The particular lambda expression is fairly complicated though, so let's factor it out:
+ 
+\begin{lstlisting}
+(define (mem-helper pred op)
+  (lambda (acc next) 
+    (if (and (not acc)
+             (pred (op next)))
+        next
+        acc)))
+ 
+(define (memq obj lst)
+  (fold (mem-helper (curry eq? obj) id) #f lst))
+ 
+(define (memv obj lst)
+  (fold (mem-helper (curry eqv? obj) id) #f lst))
+ 
+(define (member obj lst)
+  (fold (mem-helper (curry equal? obj) id) #f lst))
+ 
+(define (assq obj alist)
+  (fold (mem-helper (curry eq? obj) car) #f alist))
+ 
+(define (assv obj alist)
+  (fold (mem-helper (curry eqv? obj) car) #f alist))
+ 
+(define (assoc obj alist)
+  (fold (mem-helper (curry equal? obj) car) #f alist))
+\end{lstlisting}
+ 
+The helper function is parameterized by the predicate to use and the operation to apply to the result if found. Its accumulator represents the first value found so far: it starts out with \verb|#f|\index{\#f@\texttt{\#f}} and takes on the first value that satisfies its predicate. We avoid finding subsequent values by testing for a non-\verb|#f|\index{\#f@\texttt{\#f}} value and returning the existing accumulator if it's already set. We also provide an operation that will be applied to the next value each time the predicate tests: this lets us customize \verb|mem-helper|\index{mem-helper@\texttt{mem-helper}} to check the value itself (for \verb|member|\index{member@\texttt{member}}) or only the key of the value (for \verb|assoc|\index{assoc@\texttt{assoc}}).
+ 
+The rest of the functions are just various combinations of \verb|eq?|\index{eq?@\texttt{eq?}}/\verb|eqv?|\index{eqv?@\texttt{eqv?}}/\verb|equal?|\index{equal?@\texttt{equal?}} and \verb|id|\index{id@\texttt{id}}/\verb|car|\index{car@\texttt{car}}, folded over the list with an initial value of \verb|#f|.
+ 
+Next, let's define the functions \verb|map|\index{map@\texttt{map}} and \verb|filter|\index{filter@\texttt{filter}}. Map applies a function to every element of a list, returning a new list with the transformed values:
+ 
+\begin{lstlisting}
+(define (map func lst)
+  (foldr (lambda (x y)
+                 (cons (func x) y))
+         '()
+         lst))
+\end{lstlisting}
+ 
+Remember that \verb|foldr|\index{foldr@\texttt{foldr}}'s function takes its arguments in the opposite order as \verb|fold|\index{fold@\texttt{fold}}, with the current value on the left. \verb|map|\index{map@\texttt{map}}'s lambda applies the function to the current value, then conses it with the rest of the mapped list, represented by the right-hand argument. It's essentially replacing every infix \verb|cons|\index{cons@\texttt{cons}} constructor with one that conses, but also applies the function to its left-side argument.
+ 
+\verb|filter|\index{filter@\texttt{filter}} keeps only the elements of a list that satisfy a predicate, dropping all others:
+ 
+\begin{lstlisting}
+(define (filter pred lst)
+  (foldr (lambda (x y)
+                 (if (pred x)
+                     (cons x y)
+                     y))
+         '()
+         lst))
+\end{lstlisting}
+ 
+This works by testing the current value against the predicate. If it's true, replacing \verb|cons|\index{cons@\texttt{cons}} with \verb|cons|, i.e. don't do anything. If it's false, drop the \verb|cons| and just return the rest of the list. This eliminates all the elements that don't satisfy the predicate, consing up a new list that includes only the ones that do.
+ 
+The complete standard library is therefore:
+ 
+\lstinputlisting[captionpos=t,basicstyle=\scriptsize,frame=lines,caption={[stdlib.scm]Standard library (stdlib.scm)}, numbers=left,numberstyle=\tiny,stepnumber=5,firstnumber=1]{code/stdlib.scm}
+ 
+We can use the standard library by starting up our Lisp interpreter and typing \lstinline|(load "stdlib.scm")|:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ./lisp
+Lisp>>> (load "stdlib.scm")
+ (lambda ("pred" . lst) ...)
+Lisp>>> (map (curry + 2) '(1 2 3 4))
+ (3 4 5 6)
+Lisp>>> (filter even? '(1 2 3 4))
+ (2 4)
+Lisp>>> quit
+\end{lstlisting}
+ 
+There are many other useful functions that could go into the standard library, including \verb|list-tail|\index{list-tail@\texttt{list-tail}}, \verb|list-ref|\index{list-ref@\texttt{list-ref}}, \verb|append|\index{append@\texttt{append}}, and various string-manipulation functions. Try implementing them as folds. Remember, the key to successful fold-programming is thinking only in terms of what happens on each iteration. Fold captures the pattern of recursion down a list, and recursive problems are best solved by working one step at a time.

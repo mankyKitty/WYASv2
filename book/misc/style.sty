@@ -1,0 +1,100 @@
+\usepackage{listings} 		% for code segments
+\usepackage{color} 		% for links and code highlighting
+\usepackage{makeidx} 		% for index of functions, programs, and other proper nouns
+\usepackage[pdftex]{hyperref}	% for external links (light blue) and table of contents and index links (dark blue)
+\usepackage{graphicx}		% for titlepage logo
+ 
+\setcounter{secnumdepth}{0} 	% number chapters
+\setcounter{tocdepth}{3}	% list chapters, sections, subsections, and subsubsections in the table of contents
+ 
+\makeindex
+ 
+\newcommand{\chapterlinks}[1]{ % create links to the chapters's Wikibooks page and talk in the margin
+	\marginpar{
+		\begin{itemize}
+			\item \href{http://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours/#1}{live version}
+			\item \href{http://en.wikibooks.org/wiki/Talk:Write_Yourself_a_Scheme_in_48_Hours/#1}{discussion}
+			\item \href{http://en.wikibooks.org/w/index.php?title=Write_Yourself_a_Scheme_in_48_Hours/#1\&action=edit}{edit}
+			\item \href{http://en.wikibooks.org/w/index.php?title=Talk:Write_Yourself_a_Scheme_in_48_Hours/#1\&action=edit\&section=new}{comment}
+			\item \href{http://en.wikibooks.org/w/index.php?title=Talk:Write_Yourself_a_Scheme_in_48_Hours/#1\&action=edit\&section=new}{report an error}
+		\end{itemize}
+	}
+}
+ 
+\newcommand{\editsection}[2]{ % create [edit section] link in the margin: \editsection{sub_page_name}{sectionnumber}
+	\marginpar{
+		\href{http://en.wikibooks.org/w/index.php?title=Write_Yourself_a_Scheme_in_48_Hours/#1\&action=edit&section=#2}{\texttt{[edit section]}}
+	}
+}
+ 
+% settings for links and PDF document info
+\definecolor{linkcolor}{rgb}{0.10,0.10,0.44}	% intra-document links are dark blue
+\definecolor{urlcolor}{rgb}{0.27,0.51,0.71}	% web links are light blue
+\hypersetup{pdftitle={Write Yourself a Scheme in 48 Hours},
+	    pdfauthor={Wikibooks contributors},
+	    pdfsubject=Programming,
+	    pdfkeywords={Haskell, Scheme interpreter},
+%
+	    colorlinks=true,
+	    urlcolor=urlcolor,
+	    linkcolor=linkcolor
+}
+ 
+% color definitions for code highlighting - also used manually in document (in for example parseString)
+\definecolor{comment}{rgb}{1,0.55,0}
+\definecolor{string}{rgb}{0.00,0.55,0.55}
+\definecolor{identifier}{rgb}{0.10,0.10,0.44}
+\definecolor{keyword}{rgb}{0.55,0,0}
+ 
+% general code listing format
+% inline operators, code snippets, and references to code use \lstinline
+% inline function names and keywords use \verb
+% inline general programming terms like list, boolean, funtion, etc use neither
+\lstset{language=Haskell,
+%
+	numbers=left,
+	numberstyle=\tiny,
+	stepnumber=1,
+	numberblanklines=true,
+%	
+	identifierstyle=\color{identifier},
+	basicstyle=\small,
+	keywordstyle=\color{keyword}\bfseries,
+	commentstyle=\color{comment},
+	stringstyle=\color{string}\ttfamily,
+%	
+	showstringspaces=false,
+	breaklines=true,
+%	
+	morekeywords=define,
+	escapechar=; % manually format segments between semicolons (see for example parseString)
+}
+ 
+\newcommand{\completecode}[2] % format for complete code listings: \completecode{filename}{description}
+	   {\lstinputlisting[captionpos=t,
+			     caption={[#1.hs]#2 (#1.hs)}, % filename.hs appears in the list of listings (after toc)
+			     				  % description (filane.hs) appears as a caption
+			     basicstyle=\scriptsize,
+			     frame=lines,
+%
+			     numbers=left,
+			     numberstyle=\tiny,
+			     stepnumber=5,
+			     firstnumber=1]
+			    {code/#1.hs}
+	   }
+ 
+\newcommand{\codesnippet}[3] % format for short snippets of code: \codesnippet{filename}{first line number}{last line number}
+	   {\lstinputlisting[firstline=#2,
+			     lastline=#3,
+			     nolol=true,		% don't add snippets to the list of listings
+			     numberfirstline=true]
+			    {code/#1.hs}
+	   }
+ 
+\lstdefinelanguage{shell}{ % format shell commands
+	morekeywords={user,ghc,Lisp},
+	morestring=[b]"
+}
+ 
+\newcommand{\highlightcode}[1]{\underline{\textbf{\texttt{#1}}}} % highlight code mentioned in text, used in ch2

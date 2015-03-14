@@ -1,0 +1,122 @@
+\chapter[Adding Variables and Assignment]{Adding Variables and Assignment: Mutable State in Haskell}
+ 
+\chapterlinks{Adding_Variables_and_Assignment}
+ 
+Finally, we get to the good stuff: variables. A variable lets us save the result of an expression and refer to it later. In Scheme, a variable can also be reset to new values, so that its value changes as the program executes. This presents a complication for Haskell, because the execution model is built upon functions that return values, but never change them.
+ 
+Nevertheless, there are several ways to simulate state in Haskell, all involving monads. The simplest is probably the \href{http://www.haskell.org/ghc/docs/latest/html/libraries/mtl/Control-Monad-State.html}{\texttt{State}\index{State@\texttt{State}} monad}, which lets you hide arbitrary state within the monad and pass it around behind the scenes. You specify the state type as a parameter to the monad (eg. if a function returns an integer but modifies a list of string pairs, it would have type \lstinline|State| \lstinline|[(String, String)]|\index{String@\texttt{String}} \lstinline|Integer|\index{Integer@\texttt{Integer}}), and access it via the get and put functions, usually within a do-block. You'd specify the initial state via the \verb|runState|\index{runState@\texttt{runState}} \verb|myStateAction|\index{myStateAction@\texttt{myStateAction}} \verb|initialList|\index{initialList@\texttt{initialList}}, which returns a pair containing the return value and the final state.
+ 
+Unfortunately, the \verb|state| monad doesn't work well for us, because the type of data we need to store is fairly complex. For a simple top-level environment, we could get away with \lstinline|[(String, LispVal)]|\index{String@\texttt{String}}\index{LispVal@\texttt{LispVal}}, storing mappings from variable names to values. However, when we start dealing with function calls, these mappings become a stack of nested environments, arbitrarily deep. And when we add closures, environments might get saved in an arbitrary \verb|Function| value, and passed around throughout the program. In fact, they might be saved in a variable and passed out of the \verb|runState| monad entirely, something we're not allowed to do.
+ 
+Instead, we use a feature called state threads, letting Haskell manage the aggregate state for us. This lets us treat mutable variables as we would in any other programming language, using functions to get or set variables. There are two flavors of state threads: the \href{http://www.haskell.org/ghc/docs/latest/html/libraries/base/Control-Monad-ST.html}{\texttt{ST}\index{ST@\texttt{ST}} monad} creates a stateful computation that can be executed as a unit, without the state escaping to the rest of the program. The \href{http://www.haskell.org/ghc/docs/latest/html/libraries/base/Data-IORef.html}{\texttt{IORef} module} lets you use stateful variables within the \verb|IO|\index{IO@\texttt{IO}} monad. Since our state has to be interleaved with IO anyway (it persists between lines in the REPL, and we will eventually have IO functions within the language itself), we'll be using \verb|IORefs|\index{IORefs@\texttt{IORefs}}.
+ 
+We can start out by importing \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/base/Data.IORef.html}{\texttt{Data.IORef}} and defining a type for our environments:
+ 
+\codesnippet{variableparser}{5}{5}
+ 
+\codesnippet{variableparser}{282}{282}
+ 
+This declares an \verb|Env|\index{Env@\texttt{Env}} as an \verb|IORef|\index{IORef@\texttt{IORef}} holding a list that maps \verb|Strings|\index{String@\texttt{String}} to mutable \verb|LispVals|\index{LispVal@\texttt{LispVal}}. We need \verb|IORef|s for both the list itself and for individual values because there are two ways that the program can mutate the environment. It might use \verb|set!| to change the value of an individual variable, a change visible to any function that shares that environment (Scheme allows nested scopes, so a variable in an outer scope is visible to all inner scopes). Or it might use define to add a new variable, which should be visible on all subsequent statements.
+ 
+Since \verb|IORef|s can only be used within the \verb|IO|\index{IO@\texttt{IO}} monad, we'll want a helper action to create an empty environment. We can't just use the empty list \lstinline|[]| because all accesses to IORefs must be sequenced, and so the type of our null environment is \verb|IO Env| instead of just plain \verb|Env|:
+ 
+\codesnippet{variableparser}{284}{285}
+ 
+From here, things get a bit more complicated, because we'll be simultaneously dealing with two monads. Remember, we also need an \verb|Error|\index{Error@\texttt{Error}} monad to handle things like unbound variables. The parts that need IO functionality and the parts that may throw exceptions are interleaved, so we can't just catch all the exceptions and return only normal values to the \verb|IO| monad.
+ 
+Haskell provides a mechanism known as monad transformers that lets you combine the functionality of multiple monads. We'll be using one of these---\href{http://www.haskell.org/ghc/docs/6.4/html/libraries/mtl/Control.Monad.Error.html\#t\%3aErrorT}{\texttt{ErrorT}}---which lets us layer error-handling functionality on top of the \verb|IO|\index{IO@\texttt{IO}} monad. Our first step is create a type synonym for our combined monad:
+ 
+\codesnippet{variableparser}{287}{287}
+ 
+Like \verb|IOThrows|\index{IOThrows@\texttt{IOThrows}}, \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}} is really a type constructor: we've left off the last argument, the return type of the function. However, \verb|ErrorT|\index{ErrorT@\texttt{ErrorT}} takes one more argument than plain old \verb|Either|\index{Either@\texttt{Either}}: we have to specify the type of monad that we're layering our error-handling functionality over. We've created a monad that may contain \verb|IO| actions that throw a \verb|LispError|\index{LispError@\texttt{LispError}}.
+ 
+We have a mix of \verb|IOThrows| and \verb|IOThrowsError| functions, but actions of different types cannot be contained within the same do-block, even if they provide essentially the same functionality. Haskell already provides a mechanism---\href{http://www.nomaware.com/monads/html/transformers.html\#lifting}{lifting\index{lifting}}---to bring values of the lower type (\verb|IO|) into the combined monad. Unfortunately, there's no similar support to bring a value of the untransformed upper type into the combined monad, so we need to write it ourselves:
+ 
+\codesnippet{variableparser}{289}{291}
+ 
+This destructures the \verb|Either|\index{Either@\texttt{Either}} type and either re-throws the error type or returns the ordinary value. Methods in typeclasses resolve based on the type of the expression, so \href{http://www.haskell.org/ghc/docs/latest/html/libraries/mtl/Control-Monad-Error.html\#v\%3AthrowError}{\texttt{throwError}\index{throwError@\texttt{throwError}}} and \texttt{return}\index{return@\texttt{return}} (members of \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/mtl/Control.Monad.Error.html\#t\%3aMonadError}{\texttt{MonadError}\index{MonadError@\texttt{MonadError}}} and \verb|Monad|\index{Monad@\texttt{Monad}}, respectively) take on their \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}} definitions. Incidentally, the type signature provided here is not fully general: if we'd left it off, the compiler would have inferred \lstinline|liftThrows ::| \lstinline|MonadError| \lstinline|m => Either e a -> m e|.
+ 
+We'll also want a helper function to run the whole top-level \verb|IOThrowsError| action, returning an \verb|IO| action. We can't escape from the \verb|IO|\index{IO@\texttt{IO}} monad, because a function that performs IO has an effect on the outside world, and you don't want that in a lazily-evaluated pure function. But you can run the error computation and catch the errors.
+ 
+\codesnippet{variableparser}{293}{294}
+ 
+This uses our previously-defined \verb|trapError|\index{trapError@\texttt{trapError}} function to take any error values and convert them to their string representations, then runs the whole computation via \verb|runErrorT|\index{runErrorT@\texttt{runErrorT}}. The result is passed into \verb|extractValue|\index{extractValue@\texttt{extractValue}} and returned as a value in the \verb|IO| monad.
+ 
+Now we're ready to return to environment handling. We'll start with a function to determine if a given variable is already bound in the environment, necessary for proper handling of \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-8.html\#\%_sec_5.2}{\texttt{define}\index{define@\texttt{define}}}:
+ 
+\codesnippet{variableparser}{296}{297}
+ 
+This first extracts the actual environment value from its \verb|IORef|\index{IORef@\texttt{IORef}} via \verb|readIORef|\index{readIORef@\texttt{readIORef}}. Then we pass it to lookup to search for the particular variable we're interested in. lookup returns a \verb|Maybe| value, so we return \verb|False| if that value was \verb|Nothing| and \verb|True| otherwise (we need to use the const function because maybe expects a function to perform on the result and not just a value). Finally, we use return to lift that value into the \verb|IO|\index{IO@\texttt{IO}} monad. Since we're just interested in a true/false value, we don't need to deal with the actual \verb|IORef| that lookup returns.
+ 
+Next, we'll want to define a function to retrieve the current value of a variable:
+ 
+\codesnippet{variableparser}{299}{303}
+ 
+Like the previous function, this begins by retrieving the actual environment from the \verb|IORef|\index{IORef@\texttt{IORef}}. However, \verb|getVar|\index{getVar@\texttt{getVar}} uses the \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}} monad, because it also needs to do some error handling. As a result, we need to use the \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/mtl/Control.Monad.Trans.html\#v\%3aliftIO}{\texttt{liftIO}} function to lift the \verb|readIORef|\index{readIORef@\texttt{readIORef}} action into the combined monad. Similarly, when we return the value, we use \lstinline|liftIO . readIORef| to generate an \verb|IOThrowsError| action that reads the returned \verb|IORef|. We don't need to use \verb|liftIO| to throw an error, however, because \verb|throwError|\index{throwError@\texttt{throwError}} is a defined for the \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/mtl/Control.Monad.Error.html\#t\%3aMonadError}{\texttt{MonadError}} typeclass, of which \verb|ErrorT|\index{ErrorT@\texttt{ErrorT}} is an instance.
+ 
+Now we create a function to set values:
+ 
+\codesnippet{variableparser}{305}{310}
+ 
+Again, we first read the environment out of its \verb|IORef|\index{IORef@\texttt{IORef}} and run a lookup on it. This time, however, we want to change the variable instead of just reading it. The \href{http://www.haskell.org/ghc/docs/6.4/html/libraries/base/Data.IORef.html\#v\%3awriteIORef}{\texttt{writeIORef}} action provides a means for this, but takes its arguments in the wrong order (\verb|ref| \lstinline|->| \verb|value| instead of \verb|value| \lstinline|->| \verb|ref|). So we use the built-in function \verb|flip|\index{flip@\texttt{flip}} to switch the arguments of \verb|writeIORef|\index{writeIORef@\texttt{writeIORef}} around, and then pass it the value. Finally, we return the value we just set, for convenience.
+ 
+We'll want a function to handle the special behavior of \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-8.html\#\%_sec_5.2}{\texttt{define}}, which sets a variable if already bound or creates a new one if not. Since we've already defined a function to set values, we can use it in the former case:
+ 
+\codesnippet{variableparser}{312}{321}
+ 
+It's the latter case that's interesting, where the variable is unbound. We create an IO action (via do-notation) that creates a new \verb|IORef|\index{IORef@\texttt{IORef}} to hold the new variable, reads the current value of the environment, then writes a new list back to that variable consisting of the new \verb|(key, variable)| pair added to the front of the list. Then we lift that whole do-block into the \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}} monad with \verb|liftIO|\index{liftIO@\texttt{liftIO}}.
+ 
+There's one more useful environment function: being able to bind a whole bunch of variables at once, like what would happen at function invocation. We might as well build that functionality now, though we won't be using it until the next section:
+ 
+\codesnippet{variableparser}{323}{327}
+ 
+This is perhaps more complicated than the other functions, since it uses a monadic pipeline (rather than do-notation) and a pair of helper functions to do the work. It's best to start with the helper functions. \verb|addBinding|\index{addBinding@\texttt{addBinding}} takes a variable name and value, creates an \verb|IORef| to hold the new variable , and then returns the \verb|(name, value)| pair. \verb|extendEnv|\index{extendEnv@\texttt{extendEnv}} calls \verb|addBinding| on each member of \verb|bindings|\index{bindings@\texttt{bindings}} (\verb|mapM|\index{mapM@\texttt{mapM}}) to create a list of \verb|(String, IORef LispVal)| pairs, and then appends the current environment to the end of that \lstinline|(++ env)|. Finally, the whole function wires these functions up in a pipeline, starting by reading the existing environment out of its \verb|IORef|, then passing the result to \verb|extendEnv|, then returning a new \verb|IORef|\index{IORef@\texttt{IORef}} with the extended environment.
+ 
+Now that we have all our environment functions, we need to start using them in the evaluator. Since Haskell has no global variables, we'll have to thread the environment through the evaluator as a parameter. While we're at it, we might as well add the \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html\#\%_sec_4.1.6}{\texttt{set!}} and \href{http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-8.html\#\%_sec_5.2}{\texttt{define}\index{define@\texttt{define}}} special forms.
+ 
+\codesnippet{variableparser}{91}{107}
+ 
+Since a single environment gets threaded through a whole interactive session, we need to change a few of our IO functions to take an environment.
+ 
+\codesnippet{variableparser}{263}{267}
+ 
+We need the \verb|runIOThrows|\index{runIOThrows@\texttt{runIOThrows}} in \verb|evalString|\index{evalString@\texttt{evalString}} because the type of the monad has changed from \verb|ThrowsError|\index{ThrowsError@\texttt{ThrowsError}} to \verb|IOThrowsError|\index{IOThrowsError@\texttt{IOThrowsError}}. Similarly, we need a \verb|liftThrows|\index{liftThrows@\texttt{liftThrows}} to bring \verb|readExpr|\index{readExpr@\texttt{readExpr}} into the \verb|IOThrowsError| monad.
+ 
+Next, we initialize the environment with a null variable before starting the program:
+ 
+\codesnippet{variableparser}{276}{280}
+ 
+\sloppy
+We've created an additional helper function \verb|runOne|\index{runOne@\texttt{runOne}} to handle the single-expression case, since it's now somewhat more involved than just running \verb|eval| \verb|And|\verb|Print|. The changes to \verb|runRepl| are a bit more subtle: notice how we added a function composition operator before \verb|evalAndPrint|. That's because \verb|evalAndPrint|\index{evalAndPrint@\texttt{evalAndPrint}} now takes an additional \verb|Env|\index{Env@\texttt{Env}} parameter, fed from \verb|nullEnv|\index{nullEnv@\texttt{nullEnv}}. The function composition tells \verb|until_| that instead of taking plain old \verb|evalAndPrint| as an action, it ought to apply it first to whatever's coming down the monadic pipeline, in this case the result of \verb|nullEnv|. Thus, the actual function that gets applied to each line of input is \lstinline|(evalAndPrint env)|, just as we want it.
+\fussy
+ 
+Finally, we need to change our main function to call \verb|runOne| instead of evaluating \verb|evalAndPrint| directly:
+ 
+\codesnippet{variableparser}{9}{14}
+ 
+The complete code is therefore:
+ 
+\completecode{variableparser}{A parser able to handle variables}
+ 
+And we can compile and test our program:
+ 
+\begin{lstlisting}[language=shell,numbers=none,nolol]
+user>> ghc -package parsec -o lisp variableparser.hs
+user>># ./lisp
+Lisp>>> (define x 3)
+ 3
+Lisp>>> (+ x 2)
+ 5
+Lisp>>> (+ y 2)
+ Getting an unbound variable: y
+Lisp>>> (define y 5)
+ 5
+Lisp>>> (+ x (- y 2))
+ 6
+Lisp>>> (define str "A string")
+ "A string"
+Lisp>>> (< str "The string")
+ Invalid type: expected number, found "A string"
+Lisp>>> (string<? str "The string")
+ #t
+ \end{lstlisting}

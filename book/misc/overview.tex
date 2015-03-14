@@ -1,0 +1,32 @@
+\chapter*{Overview}
+\addcontentsline{toc}{chapter}{Overview}
+ 
+% Live version links
+\marginpar{
+	\begin{itemize}
+		\item \href{http://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours\#Overview}{live version}
+		\item \href{http://en.wikibooks.org/wiki/Talk:Write_Yourself_a_Scheme_in_48_Hours}{discussion}
+		\item \href{http://en.wikibooks.org/w/index.php?title=Write_Yourself_a_Scheme_in_48_Hours\&action=edit\&section=1}{edit}
+		\item \href{http://en.wikibooks.org/w/index.php?title=Talk:Write_Yourself_a_Scheme_in_48_Hours\&action=edit\&section=new}{comment}
+		\item \href{http://en.wikibooks.org/w/index.php?title=Talk:Write_Yourself_a_Scheme_in_48_Hours\&action=edit\&section=new}{report an error}
+	\end{itemize}
+}
+ 
+Most Haskell tutorials on the web seem to take a language-reference-manual approach to teaching. They show you the syntax of the language, a few language constructs, and then have you construct a few simple functions at the interactive prompt. The ``hard stuff'' of how to write a functioning, useful program is left to the end, or sometimes omitted entirely.
+ 
+This tutorial takes a different tack. You'll start off with command-line arguments and parsing, and progress to writing a fully-functional Scheme interpreter that implements a good-sized subset of \href{http://www.schemers.org/Documents/Standards/R5RS/HTML}{R5RS Scheme}\index{R5RS Scheme}. Along the way, you'll learn Haskell's I/O, mutable state, dynamic typing, error handling, and parsing features. By the time you finish, you should be fairly fluent in both Haskell and Scheme.
+ 
+There're two main audiences targetted by this tutorial:
+ 
+\begin{enumerate}
+	\item People who already know \href{http://en.wikipedia.org/wiki/Lisp_programming_language}{Lisp} or \href{http://en.wikipedia.org/wiki/Scheme_programming_language}{Scheme} and want to learn \href{http://en.wikipedia.org/wiki/Haskell_programming_language}{Haskell}
+	\item People who don't know any programming language, but have a strong quantitative background and are familiar with computers
+\end{enumerate}
+ 
+The second group will likely find this challenging, as I gloss over several Scheme and general programming concepts to stay focused on the Haskell. A good textbook like \textit{\href{http://mitpress.mit.edu/sicp/full-text/book/book.html}{Structure and Interpretation of Computer Programs\index{Structure and Interpretation of Computer Programs@\textit{Structure and Interpretation of Computer Programs}}}} or \textit{\href{http://www.ccs.neu.edu/home/matthias/BTLS/}{The Little Schemer\index{The Little Schemer@\textit{The Little Schemer}}}} may help a lot here.
+ 
+Users of a procedural or object-oriented language like C\index{C}, Java\index{Java}, or Python\index{Python} should beware, however: You'll have to forget most of what you already know about programming. Haskell is completely different from those languages, and requires a different way of thinking about programming. It's best to go into this tutorial with a blank slate and try not to compare Haskell to imperative languages\index{imperative languages}, because many concepts in them (classes, functions, 'return'\index{return@\texttt{return}}) have a significantly different meaning in Haskell.
+ 
+Since each lesson builds on the code written for the previous one, it's probably best to go through the lessons in order.
+ 
+This tutorial assumes that you'll be using \href{http://www.haskell.org/ghc/}{GHC}\index{GHC} as your Haskell compiler. It may work with eg. \href{http://www.haskell.org/hugs/}{Hugs}\index{Hugs}, but it hasn't been tested at all, and you may need to download additional libraries.

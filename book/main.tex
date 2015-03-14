@@ -1,0 +1,54 @@
+\documentclass[final,twoside,onecolumn,openright,10pt,titlepage]{book}
+ 
+\usepackage{misc/style}
+ 
+\begin{document}
+ 
+\include{misc/titlepage}
+ 
+\cleardoublepage	% page format for front matter (until ch1)
+\pagenumbering{roman}
+\setcounter{page}{1}	% pages i-v
+\pagestyle{plain}	% only display page numbers (no headings)
+ 
+\tableofcontents
+%\listoftables
+\lstlistoflistings
+ 
+\clearpage
+\thispagestyle{empty}	% no page number on the blank page iv
+ 
+\include{misc/overview}
+ 
+\clearpage		% no page number on blank page vi
+\thispagestyle{empty}
+ 
+\cleardoublepage	% page format for the rest of the book
+\pagenumbering{arabic}
+\setcounter{page}{1}	% ch1 starts on page 1
+\pagestyle{headings}	% display headings for the rest of the book (except for second page of conclusion)
+ 
+\include{chapters/ch1}
+\include{chapters/ch2}
+\include{chapters/ch3}
+\include{chapters/ch4}
+\include{chapters/ch5}
+\include{chapters/ch6}
+\include{chapters/ch7}
+\include{chapters/ch8}
+\include{chapters/ch9}
+\include{chapters/ch10}
+ 
+\include{misc/conclusion}
+ 
+\appendix
+\chapter{Complete Parser}
+	\lstinputlisting[basicstyle=\small,caption={[completeparser.hs]}, numbers=left,numberstyle=\tiny,stepnumber=5,firstnumber=1]{code/ioparser.hs}
+\include{appendices/answers}
+\include{appendices/documentinfo}
+\include{appendices/gfdl}
+ 
+\addcontentsline{toc}{chapter}{Index}
+\printindex
+ 
+\end{document}
